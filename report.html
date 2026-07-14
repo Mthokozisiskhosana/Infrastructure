@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <link rel="stylesheet" href="style.css">
+</head>
+<body>
+         <!-- HEADER -->
+    <div class="header">
+    <a href="#" id="Menu" onclick="window.location.href='home.html'">←</a>        
+    <div>Reports</div>
+        <div>👤</div>
+    </div>
+<!-- Sidebar -->
+<div id="sidebar" class="sidebar">
+  <span class="close-btn" onclick="closeSidebar()"></span>
+
+  <p onclick="goToStatus()">📊Status</p>
+  <p onclick="logout()">🚪Logout</p>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+<!--Content--->
+<!-- TRACK REPORTS -->
+        <div class="section-title">Track My Reports</div>
+
+        <button class="action-btn secondary-btn" onclick="clearReports()" style="margin-bottom: 15px;">
+            🗑️ Clear All Reports
+        </button>
+
+        <div id="reportList">
+            <div class="report-box">
+                No reports submitted yet
+            </div>
+        </div>
+
+
+  <!-- BOTTOM TABS -->
+    <div id="bottom-tab">
+        <a href="home.html">🏠<br>HOME</a>
+        <a href="report.html">📄<br>REPORTS</a>
+        <a href="profile.html">👤<br>PROFILE</a>
+</div>
+
+<script src="script.js"></script>
+    
+</body>
+</html>

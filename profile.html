@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+         <!-- HEADER -->
+    <div class="header">
+    <a href="#" id="Menu" onclick="window.location.href='home.html'">←</a>        
+    <div>Profile</div>
+        <div>👤</div>
+    </div>
+<!-- Sidebar -->
+<div id="sidebar" class="sidebar">
+  <span class="close-btn" onclick="closeSidebar()"></span>
+
+  <p onclick="goToStatus()">📊Status</p>
+  <p onclick="logout()">🚪Logout</p>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+
+<!--Content-->
+<div class="content">
+    <div class="section-title">Profile Information</div>
+    <div id="profileInfo" class="profile-card">
+        <div class="profile-row"><span class="profile-label">Name:</span> <span id="profileName">Loading...</span></div>
+        <div class="profile-row"><span class="profile-label">Email:</span> <span id="profileEmail">Loading...</span></div>
+        <div class="profile-row"><span class="profile-label">Phone:</span> <span id="profilePhone">Loading...</span></div>
+        <div class="profile-row"><span class="profile-label">User ID:</span> <span id="profileId">Loading...</span></div>
+    </div>
+</div>
+
+  <!-- BOTTOM TABS -->
+    <div id="bottom-tab">
+        <a href="home.html">🏠<br>HOME</a>
+        <a href="report.html">📄<br>REPORTS</a>
+        <a href="profile.html">👤<br>PROFILE</a>
+</div>
+
+<script src="script.js"></script>
+    
+</body>
+</html>

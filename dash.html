@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="style.css">
+
+<title>Reports</title>
+
+</head>
+
+<body>
+
+<div class="app-container">
+
+  
+    <!-- HEADER -->
+    <div class="header">
+    <a href="#" id="Menu" onclick="openSidebar()">☰</a>        
+        <div>Reports</div>
+        <div>👤</div>
+    </div>
+    <!-- Sidebar -->
+<div id="sidebar" class="sidebar">
+  <span class="close-btn" onclick="closeSidebar()"></span>
+
+                                       
+   <p onclick="goToProfile()">👤 Profile</p>
+  <p onclick="logout()">🚪Logout</p>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+
+
+    <!-- CONTENT -->
+    <div class="content">
+
+        <div class="section-title">Report Infrastructure Problem</div>
+
+        <!-- DESCRIPTION -->
+        <textarea id="description" rows="4" placeholder="Describe the infrastructure issue (e.g. pothole, broken pipe, street light fault)"></textarea>
+
+        <!-- IMAGE CAPTURE -->
+        <button class="action-btn" onclick="chooseImageSource()">
+            📷 Capture Image
+        </button>
+
+        <div class="preview" id="previewBox">   
+            No image captured
+        </div>
+
+        <!-- GPS -->
+        <button class="action-btn secondary-btn" onclick="getLocation()">
+             Capture GPS Location
+        </button>
+
+        <div class="gps-box" id="gpsBox">
+            Location not captured
+        </div>
+
+        <!-- SUBMIT -->
+        <button type="button" class="action-btn" onclick="submitReport()">
+             Submit Infrastructure Report
+        </button>
+
+         <div id="successMessage" class="success-message">
+        Report successfully submitted
+         </div>
+
+        
+    </div>
+<!-- BOTTOM TABS -->
+    <div id="bottom-tab">
+        <a href="home.html">🏠<br>HOME</a>
+        <a href="report.html">📄<br>REPORTS</a>
+        <a href="profile.html">👤<br>PROFILE</a>
+
+</div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

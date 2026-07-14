@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="style.css">
+<title>CIRIS Dashboard</title>
+</head>
+
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <a href="#" onclick="openSidebar()">☰</a>
+    <div>Dashboard</div>
+    <div>👤</div>
+</div>
+
+<!-- Sidebar -->
+<div id="sidebar" class="sidebar">
+  <!--<span class="close-btn" onclick="closeSidebar()"></span>-->
+  <p onclick="goToProfile()">👤 Profile</p>
+  <p onclick="logout()">🚪 Logout</p>
+</div>
+
+<div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+
+<!-- MAIN -->
+<div class="app-container">
+
+<button id="Reportb" onclick="window.location.href='dash.html'">
+    + New Report
+</button>
+
+<!-- OVERVIEW -->
+<div class="content-section">
+<span class="section-label">Community Overview</span>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total Reports</div>
+    <div class="stat-value">0</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Resolved</div>
+    <div class="stat-value">0</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">In Progress</div>
+    <div class="stat-value">0</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Pending</div>
+    <div class="stat-value">0</div>
+  </div>
+</div>
+</div>
+
+<!-- OPTIONS-->
+<div class="content-section">
+
+
+<div class="option-list">
+
+  <div class="option-item">
+    <div class="option-icon">📊</div>
+    <div class="option-content">
+      <div class="option-title"><a href="status.html">Status</a></div>
+    </div>
+  </div>
+
+  <div class="option-item">
+    <div class="option-icon">📄</div>
+    <div class="option-content">
+      <div class="option-title"><a href="history.html">History</a></div>
+    </div>
+   
+  </div>
+
+</div>
+</div>
+
+</div>
+
+<!-- BOTTOM NAV -->
+<div id="bottom-tab">
+    <a href="home.html">🏠<br>HOME</a>
+    <a href="report.html">📄<br>REPORTS</a>
+    <a href="profile.html">👤<br>PROFILE</a>
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>

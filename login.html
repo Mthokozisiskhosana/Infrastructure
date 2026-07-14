@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Portal - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 420px;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 35px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 6px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f5f5f5;
+            margin: 20px 25px 0;
+            border-radius: 10px;
+            padding: 4px;
+            position: relative;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            color: #666;
+            transition: all 0.3s;
+            z-index: 2;
+            border: none;
+            background: transparent;
+            font-family: inherit;
+        }
+
+        .tab.active {
+            color: white;
+        }
+
+        .tab-slider {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: calc(50% - 4px);
+            height: calc(100% - 8px);
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border-radius: 8px;
+            transition: transform 0.3s;
+            z-index: 1;
+        }
+
+        .tab-slider.right {
+            transform: translateX(100%);
+        }
+
+        .forms-container {
+            position: relative;
+            height: 480px;
+            overflow: hidden;
+        }
+
+        .form-panel {
+            position: absolute;
+            width: 100%;
+            padding: 25px;
+            transition: all 0.4s ease;
+        }
+
+        .form-panel.login {
+            left: 0;
+            opacity: 1;
+        }
+
+        .form-panel.register {
+            left: 100%;
+            opacity: 0;
+        }
+
+        .forms-container.show-register .form-panel.login {
+            left: -100%;
+            opacity: 0;
+        }
+
+        .forms-container.show-register .form-panel.register {
+            left: 0;
+            opacity: 1;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #444;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        input[type="tel"] {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #2a5298;
+            box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.1);
+        }
+
+        .password-field {
+            position: relative;
+        }
+
+        .show-password {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #666;
+            font-size: 13px;
+            font-weight: 500;
+            user-select: none;
+        }
+
+        .show-password:hover {
+            color: #2a5298;
+        }
+
+        .options {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 18px 0;
+            font-size: 13px;
+        }
+
+        .remember {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #555;
+            cursor: pointer;
+        }
+
+        .remember input {
+            width: 16px;
+            height: 16px;
+            accent-color: #2a5298;
+            cursor: pointer;
+        }
+
+        .forgot {
+            color: #2a5298;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .forgot:hover {
+            text-decoration: underline;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(30, 60, 114, 0.4);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-error {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+        }
+
+        .alert-success {
+            background: #efe;
+            color: #3c3;
+            border: 1px solid #cfc;
+        }
+
+        .strength-meter {
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            margin-top: 6px;
+            overflow: hidden;
+        }
+
+        .strength-bar {
+            height: 100%;
+            width: 0;
+            transition: all 0.3s;
+        }
+
+        .weak { background: #e74c3c; width: 33%; }
+        .medium { background: #f39c12; width: 66%; }
+        .strong { background: #27ae60; width: 100%; }
+
+        .info-box {
+            background: #f0f7ff;
+            border: 1px solid #cce5ff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: #004085;
+        }
+
+        .info-box strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                border-radius: 0;
+                min-height: 100vh;
+            }
+            
+            .forms-container {
+                height: auto;
+                min-height: 480px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Community Portal</h1>
+            <p>Report infrastructure issues in your area</p>
+        </div>
+
+        <div class="tabs">
+            <div class="tab-slider" id="slider"></div>
+            <button type="button" class="tab active" onclick="switchTab('login')">Sign In</button>
+            <button type="button" class="tab" onclick="switchTab('register')">Register</button>
+        </div>
+
+        <div class="forms-container" id="formContainer">
+            
+            <!-- LOGIN -->
+            <div class="form-panel login">
+                <div class="info-box">
+                    <strong>New User?</strong>
+                    Please register first to create an account
+                </div>
+                <div class="alert alert-error" id="loginError">Invalid email or password</div>
+                
+                <form id="loginForm" novalidate>
+                    <div class="form-group">
+                        <label for="loginEmail">Email Address</label>
+                        <input type="email" id="loginEmail" name="email" placeholder="your@gmail.com" required autocomplete="email">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <div class="password-field">
+                            <input type="password" id="loginPassword" name="password" placeholder="Enter password" required autocomplete="current-password">
+                            <span class="show-password" onclick="togglePassword('loginPassword', this)">Show</span>
+                        </div>
+                    </div>
+
+                    <div class="options">
+                        <label class="remember">
+                            <input type="checkbox" id="rememberMe" name="remember">
+                            <span>Remember me</span>
+                        </label>
+                        <a href="forgortpassword.html" class="forgot">Forgot password?</a>
+                    </div>
+
+                    <button type="submit" class="btn-submit" id="loginBtn">Sign In</button>
+                </form>
+            </div>
+
+            <!-- REGISTER -->
+            <div class="form-panel register">
+                <div class="alert alert-success" id="registerSuccess">Account created! Please sign in.</div>
+                <div class="alert alert-error" id="registerError">Registration failed. Try again.</div>
+
+                <form id="registerForm" novalidate>
+                    <div class="form-group">
+                        <label for="fullName">Full Name</label>
+                        <input type="text" id="fullName" name="fullName" placeholder="John Doe" required autocomplete="name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="registerEmail">Email Address</label>
+                        <input type="email" id="registerEmail" name="email" placeholder="your@email.com" required autocomplete="email">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone">Phone Number</label>
+                        <input type="tel" id="phone" name="phone" placeholder="012 345 6789" autocomplete="tel">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="registerPassword">Password</label>
+                        <div class="password-field">
+                            <input type="password" id="registerPassword" name="password" placeholder="Min 8 characters" required minlength="8" autocomplete="new-password">
+                            <span class="show-password" onclick="togglePassword('registerPassword', this)">Show</span>
+                        </div>
+                        <div class="strength-meter">
+                            <div class="strength-bar" id="strengthBar"></div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-submit" id="registerBtn">Create Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+   <script>
+// ============================================
+// CONFIG (CHANGE THIS TO YOUR BACKEND URL)
+// ============================================
+const API_BASE = "http://localhost:3000"; // your server
+
+
+// ============================================
+// UI FUNCTIONS (UNCHANGED)
+// ============================================
+function switchTab(tab) {
+    const slider = document.getElementById('slider');
+    const container = document.getElementById('formContainer');
+    const tabs = document.querySelectorAll('.tab');
+
+    if (tab === 'register') {
+        slider.classList.add('right');
+        container.classList.add('show-register');
+        tabs[0].classList.remove('active');
+        tabs[1].classList.add('active');
+    } else {
+        slider.classList.remove('right');
+        container.classList.remove('show-register');
+        tabs[0].classList.add('active');
+        tabs[1].classList.remove('active');
+    }
+}
+
+function togglePassword(inputId, span) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        span.textContent = 'Hide';
+    } else {
+        input.type = 'password';
+        span.textContent = 'Show';
+    }
+}
+
+
+// ============================================
+// LOGIN (REAL DATABASE)
+// ============================================
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const btn = document.getElementById('loginBtn');
+    const error = document.getElementById('loginError');
+
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value;
+
+    if (!email || !password) {
+        error.textContent = 'Please fill in all fields';
+        error.classList.add('show');
+        return;
+    }
+
+    error.classList.remove('show');
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+
+    try {
+        const res = await fetch(`${API_BASE}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            localStorage.setItem("user_session", JSON.stringify(data));
+
+            error.textContent = "Login successful!";
+            error.className = "alert alert-success show";
+
+            setTimeout(() => {
+                window.location.href = "home.html"; // your dashboard page
+            }, 1000);
+
+        } else {
+            throw new Error(data.message || "Login failed");
+        }
+
+    } catch (err) {
+        error.textContent = err.message;
+        error.className = "alert alert-error show";
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+    }
+});
+
+
+// ============================================
+// REGISTER (REAL DATABASE)
+// ============================================
+document.getElementById('registerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const btn = document.getElementById('registerBtn');
+    const success = document.getElementById('registerSuccess');
+    const error = document.getElementById('registerError');
+    const fullNameInput = document.getElementById('fullName');
+    const emailInput = document.getElementById('registerEmail');
+    const passwordInput = document.getElementById('registerPassword');
+    const phoneInput = document.getElementById('phone');
+
+    const fullName = fullNameInput.value.trim();
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    const phone = phoneInput.value.trim();
+
+    if (!fullName || !email || !password) {
+        error.textContent = 'Please fill all required fields';
+        error.classList.add('show');
+        success.classList.remove('show');
+        return;
+    }
+
+    error.classList.remove('show');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    const names = fullName.split(" ");
+
+    try {
+        const res = await fetch(`${API_BASE}/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                first_name: names[0],
+                last_name: names.slice(1).join(" "),
+                email,
+                phone,
+                password
+            })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            success.classList.add('show');
+            error.classList.remove('show');
+            this.reset();
+            btn.disabled = false;
+            btn.textContent = 'Create Account';
+
+            setTimeout(() => switchTab('login'), 1500);
+
+        } else {
+            throw new Error(data.message || "Registration failed");
+        }
+
+    } catch (err) {
+        error.textContent = err.message;
+        error.classList.add('show');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+});
+
+
+// ============================================
+// SESSION CHECK
+// ============================================
+window.onload = function(){
+    const session = localStorage.getItem("user_session");
+
+    if(session){
+        window.location.href = "home.html";
+    }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+         <!-- HEADER -->
+    <div class="header">
+    <a href="#" id="Menu" onclick="window.location.href='home.html'">←</a>        
+    <div>History</div>
+        <div>👤</div>
+    </div>
+<!-- Sidebar -->
+<div id="sidebar" class="sidebar">
+  <span class="close-btn" onclick="closeSidebar()"></span>
+
+  <p onclick="goToStatus()">📊Status</p>
+  <p onclick="logout()">🚪Logout</p>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+<!--Content-->
+
+  <!-- BOTTOM TABS -->
+    <div id="bottom-tab">
+        <a href="home.html">🏠<br>HOME</a>
+        <a href="report.html">📄<br>REPORTS</a>
+        <a href="profile.html">👤<br>PROFILE</a>
+</div>
+
+<script src="script.js"></script>
+    
+</body>
+</html>
