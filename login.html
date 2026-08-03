@@ -94,7 +94,7 @@
 
         .forms-container {
             position: relative;
-            height: 480px;
+            height: 520px;
             overflow: hidden;
         }
 
@@ -276,6 +276,17 @@
         .medium { background: #f39c12; width: 66%; }
         .strong { background: #27ae60; width: 100%; }
 
+        #registerRuleList {
+            display: none;
+            font-size: 12px;
+            color: #c33;
+            background: #fee;
+            border: 1px solid #fcc;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 8px;
+        }
+
         .info-box {
             background: #f0f7ff;
             border: 1px solid #cce5ff;
@@ -299,7 +310,7 @@
             
             .forms-container {
                 height: auto;
-                min-height: 480px;
+                min-height: 520px;
             }
         }
     </style>
@@ -383,14 +394,16 @@
                         <div class="strength-meter">
                             <div class="strength-bar" id="strengthBar"></div>
                         </div>
+                        <div id="registerRuleList"></div>
                     </div>
 
-                    <button type="submit" class="btn-submit" id="registerBtn">Create Account</button>
+                    <button type="submit" class="btn-submit" id="registerBtn" disabled>Create Account</button>
                 </form>
             </div>
         </div>
     </div>
 
+   <script src="password-rules.js"></script>
    <script>
 // ============================================
 // CONFIG (CHANGE THIS TO YOUR BACKEND URL)
@@ -429,6 +442,9 @@ function togglePassword(inputId, span) {
         span.textContent = 'Show';
     }
 }
+
+// Live password strength check + disable submit until it passes
+bindPasswordStrengthUI('registerPassword', 'strengthBar', 'registerRuleList', 'registerBtn');
 
 
 // ============================================
@@ -511,6 +527,15 @@ document.getElementById('registerForm').addEventListener('submit', async functio
         return;
     }
 
+    // Client-side gate (server re-checks this too — never trust the client alone)
+    const strength = checkPasswordStrength(password);
+    if (!strength.valid) {
+        error.textContent = 'Password does not meet the requirements above.';
+        error.classList.add('show');
+        success.classList.remove('show');
+        return;
+    }
+
     error.classList.remove('show');
     btn.disabled = true;
     btn.textContent = 'Creating...';
@@ -536,7 +561,8 @@ document.getElementById('registerForm').addEventListener('submit', async functio
             success.classList.add('show');
             error.classList.remove('show');
             this.reset();
-            btn.disabled = false;
+            document.getElementById('registerRuleList').style.display = 'none';
+            document.getElementById('strengthBar').style.width = '0';
             btn.textContent = 'Create Account';
 
             setTimeout(() => switchTab('login'), 1500);
@@ -545,13 +571,14 @@ document.getElementById('registerForm').addEventListener('submit', async functio
             throw new Error(data.message || "Registration failed");
         }
 
+        btn.disabled = false;
+
     } catch (err) {
         error.textContent = err.message;
         error.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
     }
-
-    btn.disabled = false;
-    btn.textContent = 'Create Account';
 });
 
 
