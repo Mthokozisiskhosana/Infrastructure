@@ -1,35 +1,334 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Status-specific styles */
+        .status-summary {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .status-badge-card {
+            background: white;
+            border-radius: 12px;
+            padding: 14px 8px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+        .status-badge-card .count {
+            font-size: 22px;
+            font-weight: bold;
+            display: block;
+        }
+        .status-badge-card .label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .status-pending .count { color: #f59e0b; }
+        .status-progress .count { color: #3b82f6; }
+        .status-resolved .count { color: #10b981; }
+
+        .status-section {
+            margin-bottom: 18px;
+        }
+        .status-section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #475569;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .report-item {
+            background: white;
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .report-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        .report-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .report-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+        .report-meta {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 4px;
+        }
+        .dot-pending { background: #f59e0b; }
+        .dot-progress { background: #3b82f6; }
+        .dot-resolved { background: #10b981; }
+
+        .empty-state {
+            text-align: center;
+            padding: 30px 15px;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+        .loading-spinner {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+        /* Make header user icon clickable */
+        .header div:last-child {
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
-         <!-- HEADER -->
+
+    <!-- HEADER -->
     <div class="header">
-    <a href="#" id="Menu" onclick="window.location.href='home.html'">←</a>        
-    <div>Status</div>
-        <div>👤</div>
+        <a href="home.html" id="Menu">←</a>        
+        <div>Status</div>
+        <div onclick="openSidebar()">👤</div>
     </div>
-<!-- Sidebar -->
-<div id="sidebar" class="sidebar">
-  <span class="close-btn" onclick="closeSidebar()"></span>
 
-  <p onclick="goToStatus()">📊Status</p>
-  <p onclick="logout()">🚪Logout</p>
-</div>
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar">
+        <span class="close-btn" onclick="closeSidebar()" style="position:absolute;top:15px;right:15px;font-size:22px;cursor:pointer;color:white;">&times;</span>
+        <p onclick="goToProfile()">👤 Profile</p>
+        <p onclick="logout()">🚪 Logout</p>
+    </div>
 
-<!-- Overlay -->
-<div id="overlay" class="overlay" onclick="closeSidebar()"></div>
-<!--Content-->
+    <!-- Overlay -->
+    <div id="overlay" class="overlay" onclick="closeSidebar()"></div>
 
-  <!-- BOTTOM TABS -->
+    <!-- CONTENT -->
+    <div class="app-container">
+        
+        <!-- Status Summary -->
+        <div class="status-summary" id="statusSummary">
+            <div class="status-badge-card status-pending">
+                <span class="count" id="countPending">0</span>
+                <div class="label">Pending</div>
+            </div>
+            <div class="status-badge-card status-progress">
+                <span class="count" id="countProgress">0</span>
+                <div class="label">In Progress</div>
+            </div>
+            <div class="status-badge-card status-resolved">
+                <span class="count" id="countResolved">0</span>
+                <div class="label">Resolved</div>
+            </div>
+        </div>
+
+        <!-- Reports by Status -->
+        <div id="statusContent">
+            <div class="loading-spinner">Loading reports...</div>
+        </div>
+
+    </div>
+
+    <!-- BOTTOM TABS -->
     <div id="bottom-tab">
         <a href="home.html">🏠<br>HOME</a>
         <a href="report.html">📄<br>REPORTS</a>
         <a href="profile.html">👤<br>PROFILE</a>
-</div>
+    </div>
 
-<script src="script.js"></script>
-    
+    <script src="script.js"></script>
+    <script>
+        const API_BASE = "http://localhost:3000";
+
+        function getStatusIcon(status) {
+            const s = (status || '').toLowerCase();
+            if (s.includes('resolved')) return '✅';
+            if (s.includes('progress')) return '🔧';
+            return '📋';
+        }
+
+        function getStatusClass(status) {
+            const s = (status || '').toLowerCase();
+            if (s.includes('resolved')) return 'dot-resolved';
+            if (s.includes('progress')) return 'dot-progress';
+            return 'dot-pending';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Unknown date';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return 'Unknown date';
+            return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        async function loadStatus() {
+            const user = getCurrentUser();
+            const container = document.getElementById('statusContent');
+
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/my-reports/${user.id}`);
+                if (!res.ok) throw new Error('Failed to fetch');
+                const reports = await res.json();
+
+                // Defensive: ensure we got an array
+                if (!Array.isArray(reports)) {
+                    throw new Error('Invalid data format');
+                }
+
+                // Count by status
+                let pending = 0, progress = 0, resolved = 0;
+                reports.forEach(r => {
+                    const s = (r.status || '').toLowerCase();
+                    if (s.includes('resolved')) resolved++;
+                    else if (s.includes('progress')) progress++;
+                    else pending++;
+                });
+
+                document.getElementById('countPending').textContent = pending;
+                document.getElementById('countProgress').textContent = progress;
+                document.getElementById('countResolved').textContent = resolved;
+
+                if (reports.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
+                            No reports found.<br>Submit a report from the dashboard.
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Group reports
+                const pendingList = reports.filter(r => {
+                    const s = (r.status || '').toLowerCase();
+                    return !s.includes('resolved') && !s.includes('progress');
+                });
+                const progressList = reports.filter(r => (r.status || '').toLowerCase().includes('progress'));
+                const resolvedList = reports.filter(r => (r.status || '').toLowerCase().includes('resolved'));
+
+                let html = '';
+
+                if (pendingList.length > 0) {
+                    html += `
+                        <div class="status-section">
+                            <div class="status-section-title">
+                                <span class="status-dot dot-pending"></span> Pending Review
+                            </div>
+                            ${pendingList.map(r => `
+                                <div class="report-item">
+                                    <div class="report-icon" style="background:#fef3c7;">${getStatusIcon(r.status)}</div>
+                                    <div class="report-content">
+                                        <div class="report-title">${escapeHtml(r.description) || 'No description'}</div>
+                                        <div class="report-meta">
+                                            <span class="status-dot ${getStatusClass(r.status)}"></span>
+                                            ${escapeHtml(r.status) || 'Pending'} · ${formatDate(r.date)}
+                                            ${r.location ? '· 📍 ' + escapeHtml(r.location) : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                if (progressList.length > 0) {
+                    html += `
+                        <div class="status-section">
+                            <div class="status-section-title">
+                                <span class="status-dot dot-progress"></span> In Progress
+                            </div>
+                            ${progressList.map(r => `
+                                <div class="report-item">
+                                    <div class="report-icon" style="background:#dbeafe;">${getStatusIcon(r.status)}</div>
+                                    <div class="report-content">
+                                        <div class="report-title">${escapeHtml(r.description) || 'No description'}</div>
+                                        <div class="report-meta">
+                                            <span class="status-dot ${getStatusClass(r.status)}"></span>
+                                            ${escapeHtml(r.status) || 'In Progress'} · ${formatDate(r.date)}
+                                            ${r.location ? '· 📍 ' + escapeHtml(r.location) : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                if (resolvedList.length > 0) {
+                    html += `
+                        <div class="status-section">
+                            <div class="status-section-title">
+                                <span class="status-dot dot-resolved"></span> Resolved
+                            </div>
+                            ${resolvedList.map(r => `
+                                <div class="report-item">
+                                    <div class="report-icon" style="background:#d1fae5;">${getStatusIcon(r.status)}</div>
+                                    <div class="report-content">
+                                        <div class="report-title">${escapeHtml(r.description) || 'No description'}</div>
+                                        <div class="report-meta">
+                                            <span class="status-dot ${getStatusClass(r.status)}"></span>
+                                            ${escapeHtml(r.status) || 'Resolved'} · ${formatDate(r.date)}
+                                            ${r.location ? '· 📍 ' + escapeHtml(r.location) : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                container.innerHTML = html;
+
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = `
+                    <div class="empty-state" style="color:#c33;">
+                        Could not load reports.<br>Please check your connection.
+                    </div>
+                `;
+            }
+        }
+
+        // Prevent XSS by escaping HTML
+        function escapeHtml(text) {
+            if (typeof text !== 'string') return text;
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load on page load
+        window.addEventListener('load', loadStatus);
+    </script>
 </body>
 </html>
