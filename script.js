@@ -33,6 +33,21 @@ function getCurrentUser() {
     }
 }
 
+// Returns the JWT saved at login, or null if not signed in.
+function getAuthToken() {
+    const user = getCurrentUser();
+    return user ? user.token : null;
+}
+
+// Standard headers for authenticated JSON requests.
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+}
+
 function getReportsKey() {
     const user = getCurrentUser();
     if (!user) return 'reports';
@@ -82,7 +97,7 @@ function chooseImageSource() {
         console.log("Opening file picker...");
         openFilePicker();
     }
-}
+} 
 
 /* CAMERA */
 function openCamera(){
@@ -263,7 +278,7 @@ function submitReport(){
     // Send to server 
     fetch('http://localhost:3000/submit-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(report)
     })
     .then(res => res.json())
@@ -296,7 +311,9 @@ function loadReports(){
         return;
     }
 
-    fetch(`http://localhost:3000/my-reports/${user.id}`)
+    fetch(`http://localhost:3000/my-reports/${user.id}`, {
+        headers: authHeaders()
+    })
     .then(res => res.json())
     .then(reports => {
         const list = document.getElementById("reportList");
@@ -336,7 +353,8 @@ function clearReports(){
 
     if(confirm("Are you sure you want to clear all reports? This cannot be undone.")){
         fetch(`http://localhost:3000/clear-reports/${user.id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: authHeaders()
         })
         .then(res => res.json())
         .then(data => {
