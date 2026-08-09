@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Municipal Login</title>
+<style>
+  :root { --navy: #1e3c72; --navy-dark: #14294f; --accent: #2f7fd1; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--navy-dark);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: #fff;
+    width: 360px;
+    border-radius: 12px;
+    padding: 32px 28px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  }
+  .brand { text-align: center; margin-bottom: 24px; }
+  .brand h1 { font-size: 20px; color: var(--navy); }
+  .brand span { color: var(--accent); }
+  .brand p { font-size: 13px; color: #64748b; margin-top: 4px; }
+  label { font-size: 13px; color: #334155; display: block; margin-bottom: 6px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  button {
+    width: 100%;
+    padding: 11px;
+    background: var(--navy);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent); }
+  .error {
+    background: #fef2f2;
+    color: #b91c1c;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <h1><span>◆</span> CIRIS Municipal Portal</h1>
+    <p>Sign in with your staff account</p>
+  </div>
+
+  <div class="error" id="errorBox"></div>
+
+  <label for="email">Email</label>
+  <input type="email" id="email" placeholder="you@municipality.gov.za">
+
+  <label for="password">Password</label>
+  <input type="password" id="password" placeholder="••••••••">
+
+  <button onclick="workerLogin()">Sign in</button>
+</div>
+
+<script>
+async function workerLogin() {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const errorBox = document.getElementById('errorBox');
+    errorBox.style.display = 'none';
+
+    if (!email || !password) {
+        errorBox.textContent = 'Please enter your email and password.';
+        errorBox.style.display = 'block';
+        return;
+    }
+
+    try {
+        const res = await fetch('http://localhost:3000/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+            errorBox.textContent = data.message || 'Login failed.';
+            errorBox.style.display = 'block';
+            return;
+        }
+
+        // This account exists and the password is correct, but this is
+        // the MUNICIPAL portal — reject community_member accounts here
+        // even though their credentials are valid. The dashboard itself
+        // is protected server-side too (requireRole), this just gives a
+        // clearer message than a silent redirect would.
+        if (!['municipal_worker', 'supervisor'].includes(data.role)) {
+            errorBox.textContent = 'This account does not have municipal staff access.';
+            errorBox.style.display = 'block';
+            return;
+        }
+
+        localStorage.setItem('user_session', JSON.stringify(data));
+
+        if (data.must_change_password) {
+            window.location.href = 'municipal-set-password.html';
+        } else {
+            window.location.href = 'municipal-dashboard.html';
+        }
+
+    } catch (err) {
+        console.error(err);
+        errorBox.textContent = 'Could not connect to server.';
+        errorBox.style.display = 'block';
+    }
+}
+</script>
+</body>
+</html>
