@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Report Details</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+
+    --received: #b45309;
+    --received-bg: #fef3c7;
+    --review: #1d4ed8;
+    --review-bg: #dbeafe;
+    --assigned: #7c3aed;
+    --assigned-bg: #ede9fe;
+    --resolved: #15803d;
+    --resolved-bg: #dcfce7;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar — same as dashboard */
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+
+  /* Main */
+  main { flex: 1; padding: 28px 32px; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .back-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .content-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 800px) {
+    .content-grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .report-image {
+    width: 100%;
+    aspect-ratio: 4/3;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #e2e8f0;
+    margin-bottom: 18px;
+  }
+
+  .field-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 4px;
+    margin-top: 16px;
+  }
+  .field-label:first-of-type { margin-top: 0; }
+  .field-value { font-size: 14px; color: var(--text); }
+
+  .status-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .status-Received  { color: var(--received); background: var(--received-bg); }
+  .status-Under_Review { color: var(--review); background: var(--review-bg); }
+  .status-Assigned  { color: var(--assigned); background: var(--assigned-bg); }
+  .status-Resolved  { color: var(--resolved); background: var(--resolved-bg); }
+
+  .card h2 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+
+  select#statusSelect {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    background: var(--card);
+    margin-bottom: 20px;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+  }
+  .btn {
+    flex: 1;
+    padding: 11px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-cancel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-cancel:hover { background: #f8fafc; }
+  .btn-save {
+    background: var(--navy);
+    color: #fff;
+  }
+  .btn-save:hover { background: var(--accent); }
+  .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .toast {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast-success { background: var(--resolved-bg); color: var(--resolved); }
+  .toast-error { background: #fef2f2; color: #b91c1c; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html" class="active">Dashboard</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
+    <a href="#">Analytics</a>
+    <a href="#">Settings</a>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <a href="municipal-dashboard.html" class="back-link">← Report Details</a>
+    <span class="worker-badge" id="workerName">Loading worker...</span>
+  </header>
+
+  <div id="reportContainer">
+    <div class="empty-state">Loading report...</div>
+  </div>
+</main>
+
+<script src="municipal.js"></script>
+<script>
+    const params = new URLSearchParams(window.location.search);
+    const reportId = params.get('id');
+
+    function pillClass(status) {
+        return 'status-pill status-' + (status || '').replace(/\s+/g, '_');
+    }
+
+    function formatDateTime(dateStr) {
+        if (!dateStr) return 'Unknown date';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Unknown date';
+        return d.toLocaleString('en-ZA', {
+            year: 'numeric', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    async function loadReportDetail() {
+        const container = document.getElementById('reportContainer');
+
+        if (!reportId) {
+            container.innerHTML = `<div class="empty-state">No report specified.</div>`;
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/reports/${reportId}`, {
+                headers: authHeaders()
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            if (res.status === 404) {
+                container.innerHTML = `<div class="empty-state">Report not found.</div>`;
+                return;
+            }
+            if (!res.ok) throw new Error('Failed to load report');
+
+            const r = await res.json();
+            renderReport(r);
+
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `<div class="empty-state">Could not load this report. Is the server running?</div>`;
+        }
+    }
+
+    function renderReport(r) {
+        const container = document.getElementById('reportContainer');
+        const statuses = ['Received', 'Under Review', 'Assigned', 'Resolved'];
+
+        container.innerHTML = `
+            <div class="content-grid">
+                <div class="card">
+                    ${r.image
+                        ? `<img class="report-image" src="${r.image}">`
+                        : `<div class="report-image"></div>`
+                    }
+                    <div class="field-label">Report ID</div>
+                    <div class="field-value">#RPT-${String(r.id).padStart(3, '0')}</div>
+
+                    <div class="field-label">Reported By</div>
+                    <div class="field-value">${escapeHtml(r.first_name)} ${escapeHtml(r.last_name)}</div>
+
+                    <div class="field-label">Location</div>
+                    <div class="field-value">${escapeHtml(r.location || 'Not provided')}</div>
+
+                    <div class="field-label">Date Submitted</div>
+                    <div class="field-value">${formatDateTime(r.date)}</div>
+
+                    <div class="field-label">Description</div>
+                    <div class="field-value">${escapeHtml(r.description) || 'No description provided'}</div>
+
+                    <div class="field-label">Current Status</div>
+                    <span class="${pillClass(r.status)}">${escapeHtml(r.status)}</span>
+                </div>
+
+                <div class="card">
+                    <h2>Update Status</h2>
+                    <select id="statusSelect">
+                        ${statuses.map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                    <div class="btn-row">
+                        <button class="btn btn-cancel" onclick="window.location.href='municipal-dashboard.html'">Cancel</button>
+                        <button class="btn btn-save" id="saveBtn" onclick="saveStatus(${r.id})">Save Changes</button>
+                    </div>
+                    <div class="toast" id="toast"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    async function saveStatus(id) {
+        const select = document.getElementById('statusSelect');
+        const btn = document.getElementById('saveBtn');
+        const toast = document.getElementById('toast');
+        const newStatus = select.value;
+
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        toast.classList.remove('show');
+
+        try {
+            const res = await fetch(`${API_BASE}/reports/${id}`, {
+                method: 'PATCH',
+                headers: authHeaders(),
+                body: JSON.stringify({ status: newStatus })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                toast.textContent = data.message || 'Could not update status.';
+                toast.className = 'toast show toast-error';
+                return;
+            }
+
+            toast.textContent = 'Status updated. Redirecting...';
+            toast.className = 'toast show toast-success';
+            setTimeout(() => { window.location.href = 'municipal-dashboard.html'; }, 900);
+
+        } catch (err) {
+            console.error(err);
+            toast.textContent = 'Could not connect to server.';
+            toast.className = 'toast show toast-error';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Changes';
+        }
+    }
+
+    window.addEventListener('load', () => {
+        if (!enforceWorkerAccess()) return;
+
+        const worker = getWorkerSession();
+        const badge = document.getElementById('workerName');
+        if (badge) badge.textContent = worker.first_name || worker.email || 'Worker';
+
+        loadReportDetail();
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Feedback</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+  nav a.nav-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+
+  main { flex: 1; padding: 28px 32px; max-width: 760px; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  header.topbar h1 { font-size: 20px; font-weight: 600; }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .feedback-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .feedback-item.unread {
+    border-left: 3px solid var(--accent);
+  }
+  .feedback-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .feedback-from {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .feedback-date {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .feedback-message {
+    font-size: 14px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .unread-tag {
+    display: inline-block;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html">Dashboard</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html" class="active">Feedback</a>
+    <a href="#">Analytics</a>
+    <a href="#">Settings</a>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <h1>Community feedback</h1>
+    <span class="worker-badge" id="workerName">Loading worker...</span>
+  </header>
+
+  <div id="feedbackContainer">
+    <div class="empty-state">Loading feedback...</div>
+  </div>
+</main>
+
+<script src="municipal.js"></script>
+<script>
+    function formatDateTime(dateStr) {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Unknown date';
+        return d.toLocaleString('en-ZA', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    async function loadFeedback() {
+        const container = document.getElementById('feedbackContainer');
+
+        try {
+            const res = await fetch(`${API_BASE}/feedback`, {
+                headers: authHeaders()
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            if (!res.ok) throw new Error('Failed to load');
+
+            const items = await res.json();
+
+            if (!Array.isArray(items) || items.length === 0) {
+                container.innerHTML = `<div class="empty-state">No feedback yet.</div>`;
+                return;
+            }
+
+            container.innerHTML = items.map(f => `
+                <div class="feedback-item ${f.is_read ? '' : 'unread'}">
+                    <div class="feedback-top">
+                        <span class="feedback-from">
+                            ${escapeHtml(f.first_name)} ${escapeHtml(f.last_name)}
+                            ${f.is_read ? '' : '<span class="unread-tag">New</span>'}
+                        </span>
+                        <span class="feedback-date">${formatDateTime(f.date)}</span>
+                    </div>
+                    <div class="feedback-message">${escapeHtml(f.message)}</div>
+                </div>
+            `).join('');
+
+            // Mark all unread messages as read now that the worker has
+            // opened the inbox — matches the "view = read" convention
+            // most notification lists use.
+            const unreadIds = items.filter(f => !f.is_read).map(f => f.id);
+            for (const id of unreadIds) {
+                fetch(`${API_BASE}/feedback/${id}/read`, {
+                    method: 'PATCH',
+                    headers: authHeaders()
+                }).catch(err => console.error(err));
+            }
+            if (unreadIds.length > 0) {
+                setTimeout(loadUnreadBadge, 500);
+            }
+
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `<div class="empty-state">Could not load feedback. Is the server running?</div>`;
+        }
+    }
+
+    window.addEventListener('load', () => {
+        if (!enforceWorkerAccess()) return;
+
+        const worker = getWorkerSession();
+        const badge = document.getElementById('workerName');
+        if (badge) badge.textContent = worker.first_name || worker.email || 'Worker';
+
+        loadFeedback();
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — All Reports</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+
+    --received: #b45309;
+    --received-bg: #fef3c7;
+    --review: #1d4ed8;
+    --review-bg: #dbeafe;
+    --assigned: #7c3aed;
+    --assigned-bg: #ede9fe;
+    --resolved: #15803d;
+    --resolved-bg: #dcfce7;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+  nav a.nav-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+
+  /* Main */
+  main { flex: 1; padding: 28px 32px; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  header.topbar h1 { font-size: 20px; font-weight: 600; }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .filters {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .filters input, .filters select {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    background: var(--card);
+  }
+  .filters input { flex: 1; min-width: 200px; }
+
+  table {
+    width: 100%;
+    background: var(--card);
+    border-radius: 10px;
+    border-collapse: collapse;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  thead { background: #f8fafc; }
+  th, td {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+  tbody tr:hover { background: #f8fafc; cursor: pointer; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .thumb {
+    width: 44px; height: 44px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #e2e8f0;
+  }
+
+  .status-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .status-Received  { color: var(--received); background: var(--received-bg); }
+  .status-Under_Review { color: var(--review); background: var(--review-bg); }
+  .status-Assigned  { color: var(--assigned); background: var(--assigned-bg); }
+  .status-Resolved  { color: var(--resolved); background: var(--resolved-bg); }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html">Dashboard</a>
+    <a href="municipal-reports.html" class="active">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
+    <a href="#">Analytics</a>
+    <a href="#">Settings</a>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <h1>All reports</h1>
+    <span class="worker-badge" id="workerName">Loading worker...</span>
+  </header>
+
+  <div class="filters">
+    <input type="text" id="searchInput" placeholder="Search by description..." oninput="debouncedLoad()">
+    <select id="statusFilter" onchange="loadReports()">
+      <option value="">All statuses</option>
+      <option value="Received">Received</option>
+      <option value="Under Review">Under Review</option>
+      <option value="Assigned">Assigned</option>
+      <option value="Resolved">Resolved</option>
+    </select>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Image</th>
+        <th>Description</th>
+        <th>Reported by</th>
+        <th>Location</th>
+        <th>Date</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="reportsBody">
+      <tr><td colspan="6" class="empty-state">Loading reports...</td></tr>
+    </tbody>
+  </table>
+</main>
+
+<script>const ROWS_CLICKABLE = true;</script>
+<script src="municipal.js"></script>
+</body>
+</html>
