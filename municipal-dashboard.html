@@ -41,6 +41,8 @@
     color: #cbd5e1;
     padding: 24px 0;
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
   }
   .brand {
     display: flex;
@@ -68,6 +70,11 @@
     color: #fff;
   }
   nav a:hover { background: rgba(255,255,255,0.04); }
+  nav a.nav-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
 
   /* Main */
   main { flex: 1; padding: 28px 32px; }
@@ -79,6 +86,43 @@
   }
   header.topbar h1 { font-size: 20px; font-weight: 600; }
   .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .bell-btn {
+    position: relative;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    padding: 6px;
+    display: flex;
+    align-items: center;
+  }
+  .bell-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .bell-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #dc2626;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+  }
+  .bell-badge.show { display: flex; }
 
   .filters {
     display: flex;
@@ -112,6 +156,7 @@
   }
   th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
   tbody tr:hover { background: #f8fafc; cursor: pointer; }
+  tbody tr.view-only:hover { background: transparent; cursor: default; }
   tbody tr:last-child td { border-bottom: none; }
 
   .thumb {
@@ -146,6 +191,27 @@
     border: 1px solid var(--border);
     font-size: 13px;
   }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
 </style>
 </head>
 <body>
@@ -154,16 +220,26 @@
   <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
   <nav>
     <a href="municipal-dashboard.html" class="active">Dashboard</a>
-    <a href="#">Reports</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
     <a href="#">Analytics</a>
     <a href="#">Settings</a>
   </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
 </aside>
 
 <main>
   <header class="topbar">
     <h1>Incoming reports</h1>
-    <span class="worker-badge" id="workerName">Loading worker...</span>
+    <div class="topbar-right">
+      <button class="bell-btn" onclick="window.location.href='municipal-feedback.html'" title="Feedback">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="bell-badge" id="bellBadge">0</span>
+      </button>
+      <span class="worker-badge" id="workerName">Loading worker...</span>
+    </div>
   </header>
 
   <div class="filters">
