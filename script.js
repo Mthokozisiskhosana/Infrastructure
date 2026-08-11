@@ -26,7 +26,15 @@ function getCurrentUser() {
     if (!sessionData) return null;
 
     try {
-        return JSON.parse(sessionData);
+        const user = JSON.parse(sessionData);
+        // Defense in depth: this key is for community members only.
+        // A municipal_worker/supervisor session should never grant
+        // access here, even if something upstream stored one under
+        // this key by mistake.
+        if (user.role && user.role !== 'community_member') {
+            return null;
+        }
+        return user;
     } catch (err) {
         console.error('Failed to parse user session:', err);
         return null;
@@ -46,6 +54,19 @@ function authHeaders() {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
+}
+
+// Swaps the sidebar avatar's emoji for the user's real profile
+// picture, if they have one set. Falls back to the emoji otherwise.
+function updateSidebarAvatar(user) {
+    const el = document.getElementById('sidebarAvatar');
+    if (!el) return;
+
+    if (user && user.profile_picture) {
+        el.innerHTML = `<img src="${user.profile_picture}" alt="Profile">`;
+    } else {
+        el.innerHTML = '👤';
+    }
 }
 
 function getReportsKey() {
