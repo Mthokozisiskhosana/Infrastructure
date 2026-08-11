@@ -537,6 +537,7 @@ document.getElementById('registerForm').addEventListener('submit', async functio
     }
 
     error.classList.remove('show');
+    error.innerHTML = error.textContent; // reset any earlier injected HTML link
     btn.disabled = true;
     btn.textContent = 'Creating...';
 
@@ -566,12 +567,23 @@ document.getElementById('registerForm').addEventListener('submit', async functio
             btn.textContent = 'Create Account';
 
             setTimeout(() => switchTab('login'), 1500);
+            btn.disabled = false;
+            return;
 
-        } else {
-            throw new Error(data.message || "Registration failed");
         }
 
-        btn.disabled = false;
+        // Special-case duplicate email: point them toward signing in
+        // instead of just telling them the email is taken.
+        if (data.message === 'Email already exists') {
+            error.innerHTML = 'That email is already registered. <a href="#" onclick="switchTab(\'login\'); return false;" style="color:#c33; text-decoration:underline; font-weight:600;">Sign in instead?</a>';
+            error.classList.add('show');
+            success.classList.remove('show');
+            btn.disabled = false;
+            btn.textContent = 'Create Account';
+            return;
+        }
+
+        throw new Error(data.message || "Registration failed");
 
     } catch (err) {
         error.textContent = err.message;
@@ -586,10 +598,22 @@ document.getElementById('registerForm').addEventListener('submit', async functio
 // SESSION CHECK
 // ============================================
 window.onload = function(){
-    const session = localStorage.getItem("user_session");
+    const raw = localStorage.getItem("user_session");
+    if (!raw) return;
 
-    if(session){
-        window.location.href = "home.html";
+    try {
+        const session = JSON.parse(raw);
+        // Only redirect for a valid community-member session — matches
+        // the check home.html uses. A stale, malformed, or
+        // wrong-role session gets cleared instead of bouncing the
+        // person back and forth between here and home.html.
+        if (session && (!session.role || session.role === 'community_member')) {
+            window.location.href = "home.html";
+        } else {
+            localStorage.removeItem("user_session");
+        }
+    } catch (e) {
+        localStorage.removeItem("user_session");
     }
 };
 </script>
