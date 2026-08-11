@@ -1,8 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="style.css">
 <title>CIRIS Dashboard</title>
+<style>
+    /* Status-list styles, folded in from status.html */
+    .status-section {
+        margin-bottom: 18px;
+    }
+    .status-section-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .report-item {
+        background: white;
+        border-radius: 10px;
+        padding: 14px;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .report-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+    .report-content {
+        flex: 1;
+        min-width: 0;
+    }
+    .report-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 4px;
+        word-break: break-word;
+    }
+    .report-meta {
+        font-size: 12px;
+        color: #64748b;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 4px;
+    }
+    .dot-pending { background: #f59e0b; }
+    .dot-progress { background: #3b82f6; }
+    .dot-resolved { background: #10b981; }
+
+    .thumb {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        object-fit: cover;
+        background: #e2e8f0;
+        flex-shrink: 0;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 30px 15px;
+        color: #94a3b8;
+        font-size: 14px;
+    }
+    .loading-spinner {
+        text-align: center;
+        padding: 40px;
+        color: #64748b;
+    }
+</style>
 </head>
 
 <body>
@@ -16,9 +99,24 @@
 
 <!-- Sidebar -->
 <div id="sidebar" class="sidebar">
-  <!--<span class="close-btn" onclick="closeSidebar()"></span>-->
-  <p onclick="goToProfile()">👤 Profile</p>
-  <p onclick="logout()">🚪 Logout</p>
+  <span class="sidebar-close" onclick="closeSidebar()">&times;</span>
+
+  <div class="sidebar-header">
+    <div class="sidebar-avatar" id="sidebarAvatar">👤</div>
+    <div>
+      <div class="sidebar-name" id="sidebarName">Community Member</div>
+      <div class="sidebar-subtext">CIRIS Account</div>
+    </div>
+  </div>
+
+  <div class="sidebar-nav">
+    <p onclick="goToProfile()">👤 Profile</p>
+    <p onclick="window.location.href='feedback.html'">💬 Feedback</p>
+  </div>
+
+  <div class="sidebar-footer">
+    <p onclick="logout()">🚪 Logout</p>
+  </div>
 </div>
 
 <div id="overlay" class="overlay" onclick="closeSidebar()"></div>
@@ -37,45 +135,43 @@
 <div class="stats-grid">
   <div class="stat-card">
     <div class="stat-label">Total Reports</div>
-    <div class="stat-value">0</div>
+    <div class="stat-value" id="countTotal">0</div>
   </div>
 
   <div class="stat-card">
     <div class="stat-label">Resolved</div>
-    <div class="stat-value">0</div>
+    <div class="stat-value" id="countResolved">0</div>
   </div>
 
   <div class="stat-card">
     <div class="stat-label">In Progress</div>
-    <div class="stat-value">0</div>
+    <div class="stat-value" id="countProgress">0</div>
   </div>
 
   <div class="stat-card">
     <div class="stat-label">Pending</div>
-    <div class="stat-value">0</div>
+    <div class="stat-value" id="countPending">0</div>
   </div>
+</div>
+</div>
+
+<!-- STATUS LIST (folded in from status.html) -->
+<div class="content-section">
+<span class="section-label">Your Reports</span>
+<div id="statusContent">
+    <div class="loading-spinner">Loading reports...</div>
 </div>
 </div>
 
 <!-- OPTIONS-->
 <div class="content-section">
-
-
 <div class="option-list">
-
-  <div class="option-item">
-    <div class="option-icon">📊</div>
-    <div class="option-content">
-      <div class="option-title"><a href="status.html">Status</a></div>
-    </div>
-  </div>
 
   <div class="option-item">
     <div class="option-icon">📄</div>
     <div class="option-content">
       <div class="option-title"><a href="history.html">History</a></div>
     </div>
-   
   </div>
 
 </div>
@@ -91,6 +187,155 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+    const API_BASE = "http://localhost:3000";
+
+    // Maps the real status values written by the municipal dashboard
+    // (Received, Under Review, Assigned, Resolved) into the three
+    // display buckets shown here. Update this in one place if the
+    // municipal side's status list ever changes.
+    function classifyStatus(status) {
+        const s = (status || '').toLowerCase().trim();
+        if (s === 'resolved') return 'resolved';
+        if (s === 'under review' || s === 'assigned') return 'progress';
+        return 'pending'; // covers "Received" and any unrecognized value
+    }
+
+    function getStatusIcon(status) {
+        const bucket = classifyStatus(status);
+        if (bucket === 'resolved') return '✅';
+        if (bucket === 'progress') return '🔧';
+        return '📋';
+    }
+
+    function getStatusClass(status) {
+        const bucket = classifyStatus(status);
+        return 'dot-' + bucket;
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return 'Unknown date';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Unknown date';
+        return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function escapeHtml(text) {
+        if (typeof text !== 'string') return text;
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    async function loadDashboard() {
+        const user = getCurrentUser();
+        const container = document.getElementById('statusContent');
+
+        if (!user) {
+            localStorage.removeItem('user_session');
+            sessionStorage.removeItem('user_session');
+            alert('You need to log in first.');
+            window.location.href = 'login.html';
+            return;
+        }
+
+        const nameEl = document.getElementById('sidebarName');
+        if (nameEl) {
+            nameEl.textContent = user.first_name
+                ? `${user.first_name} ${user.last_name || ''}`.trim()
+                : (user.email || 'Community Member');
+        }
+        updateSidebarAvatar(user);
+
+        try {
+            const res = await fetch(`${API_BASE}/my-reports/${user.id}`, {
+                headers: authHeaders()
+            });
+
+            if (res.status === 401) {
+                window.location.href = 'login.html';
+                return;
+            }
+            if (!res.ok) throw new Error('Failed to fetch');
+            const reports = await res.json();
+
+            if (!Array.isArray(reports)) {
+                throw new Error('Invalid data format');
+            }
+
+            // Counts for the top stat cards
+            let pending = 0, progress = 0, resolved = 0;
+            reports.forEach(r => {
+                const bucket = classifyStatus(r.status);
+                if (bucket === 'resolved') resolved++;
+                else if (bucket === 'progress') progress++;
+                else pending++;
+            });
+
+            document.getElementById('countTotal').textContent = reports.length;
+            document.getElementById('countPending').textContent = pending;
+            document.getElementById('countProgress').textContent = progress;
+            document.getElementById('countResolved').textContent = resolved;
+
+            if (reports.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
+                        No reports found.<br>Submit a report to get started.
+                    </div>
+                `;
+                return;
+            }
+
+            // Grouped report lists
+            const pendingList = reports.filter(r => classifyStatus(r.status) === 'pending');
+            const progressList = reports.filter(r => classifyStatus(r.status) === 'progress');
+            const resolvedList = reports.filter(r => classifyStatus(r.status) === 'resolved');
+
+            function renderGroup(title, dotClass, iconBg, list) {
+                if (list.length === 0) return '';
+                return `
+                    <div class="status-section">
+                        <div class="status-section-title">
+                            <span class="status-dot ${dotClass}"></span> ${title}
+                        </div>
+                        ${list.map(r => `
+                            <div class="report-item">
+                                ${r.image
+                                    ? `<img class="thumb" src="${r.image}">`
+                                    : `<div class="report-icon" style="background:${iconBg};">${getStatusIcon(r.status)}</div>`
+                                }
+                                <div class="report-content">
+                                    <div class="report-title">${escapeHtml(r.description) || 'No description'}</div>
+                                    <div class="report-meta">
+                                        <span class="status-dot ${getStatusClass(r.status)}"></span>
+                                        ${escapeHtml(r.status) || title} · ${formatDate(r.date)}
+                                        ${r.location ? '· 📍 ' + escapeHtml(r.location) : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            container.innerHTML =
+                renderGroup('Pending Review', 'dot-pending', '#fef3c7', pendingList) +
+                renderGroup('In Progress', 'dot-progress', '#dbeafe', progressList) +
+                renderGroup('Resolved', 'dot-resolved', '#d1fae5', resolvedList);
+
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `
+                <div class="empty-state" style="color:#c33;">
+                    Could not load reports.<br>Please check your connection.
+                </div>
+            `;
+        }
+    }
+
+    window.addEventListener('load', loadDashboard);
+</script>
 
 </body>
 </html>
