@@ -200,7 +200,7 @@ app.post("/login", async (req, res) => {
 
     try {
         const result = await pool.query(
-            `SELECT id, first_name, last_name, email, phone, password, role
+            `SELECT id, first_name, last_name, email, phone, password, role, must_change_password
              FROM Users
              WHERE email = $1`,
             [email]
@@ -228,7 +228,8 @@ app.post("/login", async (req, res) => {
             last_name: user.last_name,
             email: user.email,
             phone: user.phone,
-            role: user.role
+            role: user.role,
+            must_change_password: user.must_change_password
         });
 
     } catch (err) {
@@ -428,7 +429,7 @@ app.get("/my-reports/:user_id", requireAuth, async (req, res) => {
 
     try {
         const result = await pool.query(
-            `SELECT id, description, location, status, date
+            `SELECT id, description, image, location, status, date
              FROM Reports
              WHERE user_id = $1
              ORDER BY date DESC`,
@@ -499,6 +500,31 @@ app.get("/reports", requireAuth, requireRole("municipal_worker", "supervisor"), 
     try {
         const result = await pool.query(query, values);
         res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ======================================
+// GET SINGLE REPORT (Municipality Report Detail Screen)
+// ======================================
+app.get("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT r.id, r.description, r.image, r.location, r.status, r.date,
+                    u.first_name, u.last_name, u.email
+             FROM Reports r
+             JOIN Users u ON r.user_id = u.id
+             WHERE r.id = $1`,
+            [req.params.id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Report not found" });
+        }
+
+        res.json(result.rows[0]);
     } catch (err) {
         console.log(err);
         res.status(500).json({ message: "Server error" });
@@ -595,8 +621,8 @@ app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"),
         const passwordHash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
 
         const result = await pool.query(
-            `INSERT INTO Users (first_name, last_name, email, phone, password, role)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            `INSERT INTO Users (first_name, last_name, email, phone, password, role, must_change_password)
+             VALUES ($1, $2, $3, $4, $5, $6, true)
              RETURNING id, first_name, last_name, email, role`,
             [first_name, last_name, email, phone, passwordHash, role]
         );
@@ -667,9 +693,17 @@ async function sendSecurityEmail(toEmail, subject, htmlBody) {
 // UPDATE PROFILE (email, phone, picture)
 // Sends security alerts if email/phone changed.
 // ======================================
-app.post("/update-profile", async (req, res) => {
-    const { id, email, phone, profile_picture } = req.body;
+// ======================================
+// UPDATE PROFILE (phone, picture only — email changes go through
+// the verified request/confirm flow below)
+// ======================================
+app.post("/update-profile", requireAuth, async (req, res) => {
+    const { id, phone, profile_picture } = req.body;
     if (!id) return res.status(400).json({ message: "User ID is required" });
+
+    if (String(req.user.id) !== String(id)) {
+        return res.status(403).json({ message: "You can only update your own profile" });
+    }
 
     const phoneRegex = /^(\+27|0)[6-8][0-9]{8}$/;
     if (phone && !phoneRegex.test(phone)) {
@@ -677,7 +711,6 @@ app.post("/update-profile", async (req, res) => {
     }
 
     try {
-        // 1. Fetch old data so we know what changed
         const oldResult = await pool.query(
             "SELECT email, phone FROM Users WHERE id = $1",
             [id]
@@ -687,24 +720,11 @@ app.post("/update-profile", async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        const oldData = oldResult.rows[0];
-        const oldEmail = oldData.email;
-        const oldPhone = oldData.phone;
+        const oldPhone = oldResult.rows[0].phone;
 
-        // 2. Check email isn't taken by another account
-        const check = await pool.query(
-            "SELECT id FROM Users WHERE email = $1 AND id != $2",
-            [email, id]
-        );
-
-        if (check.rows.length > 0) {
-            return res.status(400).json({ message: "Email already in use by another account" });
-        }
-
-        // 3. Build dynamic query (only touch profile_picture when provided)
-        const fields = ["email = $1", "phone = $2"];
-        const values = [email, phone || null];
-        let paramIndex = 3;
+        const fields = ["phone = $1"];
+        const values = [phone || null];
+        let paramIndex = 2;
 
         if (profile_picture !== undefined) {
             fields.push(`profile_picture = $${paramIndex}`);
@@ -712,29 +732,21 @@ app.post("/update-profile", async (req, res) => {
             paramIndex++;
         }
 
-        values.push(id); // id is always the last parameter
+        values.push(id);
         await pool.query(
             `UPDATE Users SET ${fields.join(", ")} WHERE id = $${paramIndex}`,
             values
         );
 
-        // 4. Send security notifications
-        const changedParts = [];
-        if (oldEmail !== email) changedParts.push("email address");
-        if (oldPhone !== phone) changedParts.push("phone number");
-
-        if (changedParts.length > 0) {
-            // Notify OLD email about the change
-            const changeText = changedParts.join(" and ");
+        if (oldPhone !== phone) {
             const timeStr = new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' });
-
             await sendSecurityEmail(
-                oldEmail,
+                oldResult.rows[0].email,
                 "Security Alert: Profile Information Changed",
                 `
                 <div style="font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;">
                     <h2 style="color:#1e3c72;">Security Alert</h2>
-                    <p>Your <strong>${changeText}</strong> was just updated on your Community Portal account.</p>
+                    <p>Your <strong>phone number</strong> was just updated on your Community Portal account.</p>
                     <p><strong>Time:</strong> ${timeStr}</p>
                     <hr style="border:none;border-top:1px solid #e2e8f0;">
                     <p style="font-size:13px;color:#64748b;">
@@ -743,28 +755,8 @@ app.post("/update-profile", async (req, res) => {
                 </div>
                 `
             );
-
-            // If email changed, also notify the NEW email
-            if (oldEmail !== email) {
-                await sendSecurityEmail(
-                    email,
-                    "Your Email Address Has Been Updated",
-                    `
-                    <div style="font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;">
-                        <h2 style="color:#1e3c72;">Email Updated</h2>
-                        <p>Your account email is now <strong>${email}</strong>.</p>
-                        <p><strong>Time:</strong> ${timeStr}</p>
-                        <hr style="border:none;border-top:1px solid #e2e8f0;">
-                        <p style="font-size:13px;color:#64748b;">
-                            If you did not request this, please reset your password immediately.
-                        </p>
-                    </div>
-                    `
-                );
-            }
         }
 
-        // 5. Return updated user
         const result = await pool.query(
             "SELECT id, first_name, last_name, email, phone, profile_picture FROM Users WHERE id = $1",
             [id]
@@ -779,12 +771,229 @@ app.post("/update-profile", async (req, res) => {
 });
 
 // ======================================
+// FEEDBACK — Community member submits, municipal staff view
+// ======================================
+
+// Submit feedback (any authenticated user)
+app.post("/feedback", requireAuth, async (req, res) => {
+    const message = (req.body.message || "").trim();
+    if (!message) {
+        return res.status(400).json({ message: "Please write a message before sending." });
+    }
+    if (message.length > 2000) {
+        return res.status(400).json({ message: "Message is too long (max 2000 characters)." });
+    }
+
+    try {
+        await pool.query(
+            "INSERT INTO Feedback (user_id, message) VALUES ($1, $2)",
+            [req.user.id, message]
+        );
+        res.json({ message: "Feedback sent. Thank you!" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Could not send feedback. Please try again." });
+    }
+});
+
+// A community member's own feedback history
+app.get("/feedback/mine", requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT id, message, date FROM Feedback WHERE user_id = $1 ORDER BY date DESC",
+            [req.user.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// All feedback (municipal staff only)
+app.get("/feedback", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT f.id, f.message, f.date, f.is_read,
+                    u.first_name, u.last_name, u.email
+             FROM Feedback f
+             JOIN Users u ON f.user_id = u.id
+             ORDER BY f.date DESC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Unread count, for the notification bell badge
+app.get("/feedback/unread-count", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT COUNT(*) FROM Feedback WHERE is_read = false"
+        );
+        res.json({ count: parseInt(result.rows[0].count, 10) });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Mark one message as read (municipal staff only)
+app.patch("/feedback/:id/read", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        await pool.query(
+            "UPDATE Feedback SET is_read = true WHERE id = $1",
+            [req.params.id]
+        );
+        res.json({ message: "Marked as read" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+function isValidEmailFormat(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// ======================================
+// REQUEST EMAIL CHANGE — step 1: send a code to the NEW address.
+// Nothing in the database changes yet — the real email is untouched
+// until the code is confirmed below. This is what actually catches
+// typos: if the address is wrong, no code arrives, and the person
+// finds out immediately instead of silently losing access later.
+// ======================================
+app.post("/profile/request-email-change", requireAuth, async (req, res) => {
+    const email = (req.body.newEmail || "").trim().toLowerCase();
+
+    if (!isValidEmailFormat(email)) {
+        return res.status(400).json({ message: "Please enter a valid email address." });
+    }
+
+    const allowedDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
+    const domain = email.split('@')[1];
+    if (!allowedDomains.includes(domain)) {
+        return res.status(400).json({ message: "Please use a personal email from an allowed domain (gmail.com, yahoo.com, outlook.com, hotmail.com, icloud.com)" });
+    }
+
+    try {
+        const taken = await pool.query(
+            "SELECT id FROM Users WHERE email = $1 AND id != $2",
+            [email, req.user.id]
+        );
+        if (taken.rows.length > 0) {
+            return res.status(400).json({ message: "That email is already in use by another account." });
+        }
+
+        const code = generateOtp();
+        const expiry = new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000);
+
+        await pool.query(
+            `UPDATE Users
+             SET pending_email = $1, pending_email_token = $2, pending_email_token_expiry = $3
+             WHERE id = $4`,
+            [email, hashOtp(code), expiry, req.user.id]
+        );
+
+        await transporter.sendMail({
+            from: process.env.SMTP_FROM || '"Community Portal" <no-reply@communityportal.local>',
+            to: email,
+            subject: "Confirm your new email address",
+            html: `
+                <p>Use this code in the app to confirm this email on your Community Portal account:</p>
+                <p style="font-size: 28px; font-weight: bold; letter-spacing: 4px;">${code}</p>
+                <p>This code expires in ${RESET_CODE_TTL_MINUTES} minutes. If you didn't request this, you can ignore this email.</p>
+            `
+        });
+
+        res.json({ message: "Verification code sent to the new email address." });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Could not send verification code. Please check the address and try again." });
+    }
+});
+
+// ======================================
+// CONFIRM EMAIL CHANGE — step 2: only now does the real email update.
+// ======================================
+app.post("/profile/confirm-email-change", requireAuth, async (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ message: "Verification code is required." });
+
+    try {
+        const result = await pool.query(
+            "SELECT email, pending_email, pending_email_token, pending_email_token_expiry FROM Users WHERE id = $1",
+            [req.user.id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        const user = result.rows[0];
+        const validCode = user.pending_email_token === hashOtp(code);
+        const notExpired = user.pending_email_token_expiry && new Date(user.pending_email_token_expiry) > new Date();
+
+        if (!user.pending_email || !validCode || !notExpired) {
+            return res.status(400).json({ message: "Invalid or expired code. Please request a new one." });
+        }
+
+        const oldEmail = user.email;
+        const newEmail = user.pending_email;
+
+        await pool.query(
+            `UPDATE Users
+             SET email = $1, pending_email = NULL, pending_email_token = NULL, pending_email_token_expiry = NULL
+             WHERE id = $2`,
+            [newEmail, req.user.id]
+        );
+
+        const timeStr = new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' });
+        await sendSecurityEmail(
+            oldEmail,
+            "Your Email Address Has Been Changed",
+            `
+            <div style="font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;">
+                <h2 style="color:#1e3c72;">Email Changed</h2>
+                <p>Your Community Portal login email was changed to <strong>${newEmail}</strong>.</p>
+                <p><strong>Time:</strong> ${timeStr}</p>
+                <hr style="border:none;border-top:1px solid #e2e8f0;">
+                <p style="font-size:13px;color:#64748b;">
+                    If you did not make this change, please contact support immediately.
+                </p>
+            </div>
+            `
+        );
+
+        const updated = await pool.query(
+            "SELECT id, first_name, last_name, email, phone, profile_picture FROM Users WHERE id = $1",
+            [req.user.id]
+        );
+
+        res.json({ message: "Email updated successfully.", user: updated.rows[0] });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Could not confirm email change. Please try again." });
+    }
+});
+
+// ======================================
 // CHANGE PASSWORD
 // ======================================
-app.post("/change-password", async (req, res) => {
+app.post("/change-password", requireAuth, async (req, res) => {
     const { id, currentPassword, newPassword } = req.body;
     if (!id || !currentPassword || !newPassword) {
         return res.status(400).json({ message: "All fields are required" });
+    }
+
+    // You can only change your own password — an id in the body
+    // isn't trusted on its own, it must match the authenticated token.
+    if (String(req.user.id) !== String(id)) {
+        return res.status(403).json({ message: "You can only change your own password" });
     }
 
     const strength = validatePasswordStrength(newPassword);
@@ -810,7 +1019,7 @@ app.post("/change-password", async (req, res) => {
 
         const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await pool.query(
-            "UPDATE Users SET password = $1 WHERE id = $2",
+            "UPDATE Users SET password = $1, must_change_password = false WHERE id = $2",
             [hash, id]
         );
 
