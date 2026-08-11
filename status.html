@@ -196,7 +196,16 @@
             }
 
             try {
-                const res = await fetch(`${API_BASE}/my-reports/${user.id}`);
+                const res = await fetch(`${API_BASE}/my-reports/${user.id}`, {
+                    headers: authHeaders()
+                });
+
+                if (res.status === 401) {
+                    // Token missing/expired — send them back to log in
+                    // rather than showing a generic connection error.
+                    window.location.href = 'login.html';
+                    return;
+                }
                 if (!res.ok) throw new Error('Failed to fetch');
                 const reports = await res.json();
 
@@ -319,7 +328,7 @@
             }
         }
 
-        // Prevent XSS by escaping HTML
+      
         function escapeHtml(text) {
             if (typeof text !== 'string') return text;
             const div = document.createElement('div');
