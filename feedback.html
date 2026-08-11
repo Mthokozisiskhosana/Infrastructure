@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .feedback-form {
+            background: white;
+            border-radius: 12px;
+            padding: 18px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+        .feedback-form textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid #e2e8f0;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+        }
+        .feedback-form textarea:focus {
+            outline: none;
+            border-color: #1a3a6d;
+        }
+        .char-count {
+            font-size: 12px;
+            color: #94a3b8;
+            text-align: right;
+            margin-top: 4px;
+        }
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            font-size: 13px;
+            display: none;
+        }
+        .alert.show { display: block; }
+        .alert-success { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+        .alert-error { background: #fee; color: #c33; border: 1px solid #fcc; }
+        .feedback-item {
+            background: white;
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 10px;
+        }
+        .feedback-date {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+        .feedback-message {
+            font-size: 14px;
+            color: #0f172a;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 30px 15px;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <div class="header">
+        <a href="home.html" id="Menu">←</a>
+        <div>Feedback</div>
+        <div onclick="openSidebar()">👤</div>
+    </div>
+
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar">
+        <span class="sidebar-close" onclick="closeSidebar()">&times;</span>
+
+        <div class="sidebar-header">
+            <div class="sidebar-avatar" id="sidebarAvatar">👤</div>
+            <div>
+                <div class="sidebar-name" id="sidebarName">Community Member</div>
+                <div class="sidebar-subtext">CIRIS Account</div>
+            </div>
+        </div>
+
+        <div class="sidebar-nav">
+            <p onclick="goToProfile()">👤 Profile</p>
+            <p onclick="window.location.href='feedback.html'">💬 Feedback</p>
+        </div>
+
+        <div class="sidebar-footer">
+            <p onclick="logout()">🚪 Logout</p>
+        </div>
+    </div>
+
+    <div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+
+    <!-- CONTENT -->
+    <div class="app-container">
+
+        <span class="section-label">Send feedback to the municipality</span>
+
+        <div class="alert alert-success" id="successAlert">Feedback sent. Thank you!</div>
+        <div class="alert alert-error" id="errorAlert"></div>
+
+        <div class="feedback-form">
+            <textarea id="messageInput" placeholder="Tell us what's working, what isn't, or suggest an improvement..." maxlength="2000"></textarea>
+            <div class="char-count"><span id="charCount">0</span>/2000</div>
+            <button class="action-btn" id="sendBtn" onclick="sendFeedback()">Send Feedback</button>
+        </div>
+
+        <span class="section-label">Your previous feedback</span>
+        <div id="feedbackList">
+            <div class="empty-state">Loading...</div>
+        </div>
+
+    </div>
+
+    <!-- BOTTOM TABS -->
+    <div id="bottom-tab">
+        <a href="home.html">🏠<br>HOME</a>
+        <a href="report.html">📄<br>REPORTS</a>
+        <a href="profile.html">👤<br>PROFILE</a>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        const API_BASE = "http://localhost:3000";
+
+        document.getElementById('messageInput').addEventListener('input', function() {
+            document.getElementById('charCount').textContent = this.value.length;
+        });
+
+        function showSuccess(msg) {
+            const el = document.getElementById('successAlert');
+            el.textContent = msg;
+            el.classList.add('show');
+            document.getElementById('errorAlert').classList.remove('show');
+            setTimeout(() => el.classList.remove('show'), 4000);
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorAlert');
+            el.textContent = msg;
+            el.classList.add('show');
+            document.getElementById('successAlert').classList.remove('show');
+        }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return 'Unknown date';
+            return d.toLocaleString('en-ZA', {
+                day: 'numeric', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text ?? '';
+            return div.innerHTML;
+        }
+
+        async function sendFeedback() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            const btn = document.getElementById('sendBtn');
+
+            if (!message) {
+                showError('Please write a message before sending.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+
+            try {
+                const res = await fetch(`${API_BASE}/feedback`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ message })
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    showError(data.message || 'Could not send feedback.');
+                    return;
+                }
+
+                showSuccess(data.message || 'Feedback sent. Thank you!');
+                input.value = '';
+                document.getElementById('charCount').textContent = '0';
+                loadFeedbackHistory();
+
+            } catch (err) {
+                console.error(err);
+                showError('Could not connect to server.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Feedback';
+            }
+        }
+
+        async function loadFeedbackHistory() {
+            const container = document.getElementById('feedbackList');
+
+            try {
+                const res = await fetch(`${API_BASE}/feedback/mine`, {
+                    headers: authHeaders()
+                });
+
+                if (res.status === 401) {
+                    window.location.href = 'login.html';
+                    return;
+                }
+                if (!res.ok) throw new Error('Failed to load');
+
+                const items = await res.json();
+
+                if (!Array.isArray(items) || items.length === 0) {
+                    container.innerHTML = `<div class="empty-state">You haven't sent any feedback yet.</div>`;
+                    return;
+                }
+
+                container.innerHTML = items.map(f => `
+                    <div class="feedback-item">
+                        <div class="feedback-date">${formatDate(f.date)}</div>
+                        <div class="feedback-message">${escapeHtml(f.message)}</div>
+                    </div>
+                `).join('');
+
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = `<div class="empty-state">Could not load your feedback history.</div>`;
+            }
+        }
+
+        window.addEventListener('load', () => {
+            const user = getCurrentUser();
+            if (!user) {
+                alert('You need to log in first.');
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const nameEl = document.getElementById('sidebarName');
+            if (nameEl) {
+                nameEl.textContent = user.first_name
+                    ? `${user.first_name} ${user.last_name || ''}`.trim()
+                    : (user.email || 'Community Member');
+            }
+            updateSidebarAvatar(user);
+
+            loadFeedbackHistory();
+        });
+    </script>
+</body>
+</html>
