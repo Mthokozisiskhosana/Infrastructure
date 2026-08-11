@@ -1,8 +1,10 @@
 const API_BASE = 'http://localhost:3000';
 
 // Reads the same session shape /login now returns: includes token + role.
+// Stored under its own key so a municipal login can never overwrite
+// (or be read as) a community member's session, and vice versa.
 function getWorkerSession() {
-    const sessionData = localStorage.getItem('user_session') || sessionStorage.getItem('user_session');
+    const sessionData = localStorage.getItem('municipal_session') || sessionStorage.getItem('municipal_session');
     if (!sessionData) return null;
     try {
         return JSON.parse(sessionData);
@@ -28,6 +30,7 @@ function authHeaders() {
 function enforceWorkerAccess() {
     const worker = getWorkerSession();
     if (!worker || !worker.token || !['municipal_worker', 'supervisor'].includes(worker.role)) {
+        alert('You need to log in first.');
         window.location.href = 'municipal-login.html';
         return false;
     }
@@ -77,20 +80,20 @@ async function loadReports() {
             return;
         }
 
+        // The dashboard shows reports for quick viewing only — rows
+        // aren't clickable there. Only municipal-reports.html sets
+        // ROWS_CLICKABLE = true, which is where the actual
+        // enlarge-into-detail interaction lives.
+        const clickable = typeof ROWS_CLICKABLE !== 'undefined' && ROWS_CLICKABLE;
+
         tbody.innerHTML = reports.map(r => `
-            <tr onclick="viewReport(${r.id})">
+            <tr ${clickable ? `onclick="viewReport(${r.id})"` : ''} class="${clickable ? '' : 'view-only'}">
                 <td>${r.image ? `<img class="thumb" src="${r.image}">` : `<div class="thumb"></div>`}</td>
                 <td>${escapeHtml(r.description)}</td>
                 <td>${escapeHtml(r.first_name)} ${escapeHtml(r.last_name)}</td>
                 <td>${escapeHtml(r.location || 'Not provided')}</td>
                 <td>${new Date(r.date).toLocaleDateString('en-ZA')}</td>
-                <td>
-                    <select class="status-select" onclick="event.stopPropagation()" onchange="updateStatus(${r.id}, this.value)">
-                        ${['Received', 'Under Review', 'Assigned', 'Resolved'].map(s =>
-                            `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s}</option>`
-                        ).join('')}
-                    </select>
-                </td>
+                <td><span class="status-pill status-${r.status.replace(/\s+/g, '_')}">${escapeHtml(r.status)}</span></td>
             </tr>
         `).join('');
 
@@ -123,8 +126,8 @@ async function updateStatus(reportId, newStatus) {
 }
 
 function logoutWorker() {
-    localStorage.removeItem('user_session');
-    sessionStorage.removeItem('user_session');
+    localStorage.removeItem('municipal_session');
+    sessionStorage.removeItem('municipal_session');
     window.location.href = 'municipal-login.html';
 }
 
@@ -138,6 +141,28 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+async function loadUnreadBadge() {
+    const badge = document.getElementById('bellBadge');
+    if (!badge) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/feedback/unread-count`, {
+            headers: authHeaders()
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.count > 0) {
+            badge.textContent = data.count > 9 ? '9+' : data.count;
+            badge.classList.add('show');
+        } else {
+            badge.classList.remove('show');
+        }
+    } catch (err) {
+        console.error('Could not load unread feedback count:', err);
+    }
+}
+
 window.addEventListener('load', () => {
     if (!enforceWorkerAccess()) return;
 
@@ -146,5 +171,12 @@ window.addEventListener('load', () => {
     if (badge) {
         badge.textContent = worker.first_name || worker.email || 'Worker';
     }
-    loadReports();
+
+    // Only the dashboard has this table — municipal-report.html and
+    // municipal-feedback.html run their own load logic instead.
+    if (document.getElementById('reportsBody')) {
+        loadReports();
+    }
+
+    loadUnreadBadge();
 });
