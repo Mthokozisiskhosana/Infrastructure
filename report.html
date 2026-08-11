@@ -12,13 +12,26 @@
     </div>
 <!-- Sidebar -->
 <div id="sidebar" class="sidebar">
-  <span class="close-btn" onclick="closeSidebar()"></span>
+  <span class="sidebar-close" onclick="closeSidebar()">&times;</span>
 
-  <p onclick="goToStatus()">📊Status</p>
-  <p onclick="logout()">🚪Logout</p>
+  <div class="sidebar-header">
+    <div class="sidebar-avatar" id="sidebarAvatar">👤</div>
+    <div>
+      <div class="sidebar-name" id="sidebarName">Community Member</div>
+      <div class="sidebar-subtext">CIRIS Account</div>
+    </div>
+  </div>
+
+  <div class="sidebar-nav">
+    <p onclick="goToProfile()">👤 Profile</p>
+    <p onclick="window.location.href='feedback.html'">💬 Feedback</p>
+  </div>
+
+  <div class="sidebar-footer">
+    <p onclick="logout()">🚪 Logout</p>
+  </div>
 </div>
 
-<!-- Overlay -->
 <div id="overlay" class="overlay" onclick="closeSidebar()"></div>
 <!--Content--->
 <!-- TRACK REPORTS -->
