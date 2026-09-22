@@ -21,6 +21,17 @@ function logout() {
   window.location.href = 'login.html';
 }
 
+// Call this instead of a raw redirect whenever a fetch comes back 401/403.
+// Clearing the session here (not just redirecting) is what prevents an
+// infinite bounce between login.html and whichever page made the request —
+// without this, a stale/expired token never gets removed, and login.html
+// keeps sending the user right back to a page that will reject it again.
+function handleUnauthorized() {
+  localStorage.removeItem('user_session');
+  sessionStorage.removeItem('user_session');
+  window.location.href = 'login.html';
+}
+
 function getCurrentUser() {
     const sessionData = localStorage.getItem('user_session') || sessionStorage.getItem('user_session');
     if (!sessionData) return null;
@@ -302,8 +313,12 @@ function submitReport(){
         headers: authHeaders(),
         body: JSON.stringify(report)
     })
-    .then(res => res.json())
-    .then(data => {
+    .then(res => res.json().then(data => ({ status: res.status, data })))
+    .then(({ status, data }) => {
+        if (status === 409) {
+            alert(data.message || "This report has been submitted before.");
+            return;
+        }
         if(data.message === "Report submitted successfully"){
             clearForm();
 
