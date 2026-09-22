@@ -12,21 +12,42 @@
     </div>
 <!-- Sidebar -->
 <div id="sidebar" class="sidebar">
-  <span class="close-btn" onclick="closeSidebar()"></span>
+  <span class="sidebar-close" onclick="closeSidebar()">&times;</span>
 
-  <p onclick="goToStatus()">📊Status</p>
-  <p onclick="logout()">🚪Logout</p>
+  <div class="sidebar-header">
+    <div class="sidebar-avatar">👤</div>
+    <div>
+      <div class="sidebar-name" id="sidebarName">Community Member</div>
+      <div class="sidebar-subtext">CIRIS Account</div>
+    </div>
+  </div>
+
+  <div class="sidebar-nav">
+    <p onclick="goToProfile()">👤 Profile</p>
+    <p onclick="goToProfile()">💬 Feedback</p>
+  </div>
+
+  <div class="sidebar-footer">
+    <p onclick="logout()">🚪 Logout</p>
+  </div>
 </div>
 
-<!-- Overlay -->
 <div id="overlay" class="overlay" onclick="closeSidebar()"></div>
 <!--Content-->
 
-  <!-- BOTTOM TABS -->
-    <div id="bottom-tab">
-        <a href="home.html">🏠<br>HOME</a>
-        <a href="report.html">📄<br>REPORTS</a>
-        <a href="profile.html">👤<br>PROFILE</a>
+ <!-- BOTTOM NAV -->
+<div id="bottom-tab">
+    <a href="home.html" class="nav-item">🏠<br>HOME</a>
+    <a href="report.html" class="nav-item">
+        📄<br>REPORTS
+        <span class="nav-badge" id="reportsBadge" style="display:none;"></span>
+    </a>
+    <a href="dash.html" class="nav-item nav-fab">
+        <span class="nav-fab-circle">+</span>
+        <span class="nav-fab-label">Report</span>
+    </a>
+    <a href="history.html" class="nav-item">🕘<br>HISTORY</a>
+    <a href="profile.html" class="nav-item">👤<br>PROFILE</a>
 </div>
 
 <script src="script.js"></script>
