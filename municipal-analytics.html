@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Analytics</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+  nav a.nav-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .nav-badge {
+    display: none;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    min-width: 18px;
+    text-align: center;
+    line-height: 1.5;
+  }
+  .nav-badge.show { display: inline-block; }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+
+  main { flex: 1; padding: 28px 32px; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  header.topbar h1 { font-size: 20px; font-weight: 600; }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 20px;
+  }
+
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    min-height: 320px;
+  }
+  .chart-card h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 14px;
+  }
+  .chart-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .chart-icon.blue { background: #dbeafe; }
+  .chart-icon.purple { background: #ede9fe; }
+
+  .chart-body { width: 100%; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html">Dashboard</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
+      
+    </a>
+    <a href="municipal-analytics.html" class="active">Analytics</a>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <h1>Analytics</h1>
+    <span class="worker-badge" id="workerName">Loading worker...</span>
+  </header>
+
+  <div class="analytics-grid" id="analyticsGrid">
+    <div class="chart-card">
+      <h2><span class="chart-icon blue">📊</span> Reports by Infrastructure Category</h2>
+      <div class="chart-body" id="categoryChart"><div class="empty-state">Loading...</div></div>
+    </div>
+    <div class="chart-card">
+      <h2><span class="chart-icon purple">🕒</span> Current Pipeline Status Distribution</h2>
+      <div class="chart-body" id="statusChart"><div class="empty-state">Loading...</div></div>
+    </div>
+  </div>
+</main>
+
+<script src="municipal.js"></script>
+<script>
+    // Colors for each pipeline status — kept consistent with the
+    // status pills used elsewhere in the dashboard.
+    const STATUS_COLORS = {
+        'Received': '#f59e0b',
+        'Under Review': '#2f7fd1',
+        'Assigned': '#7c3aed',
+        'Resolved': '#10b981'
+    };
+    const STATUS_ORDER = ['Received', 'Under Review', 'Assigned', 'Resolved'];
+
+    function humanizeCategory(raw) {
+        if (!raw) return 'Unclassified';
+        return raw
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function computeCategoryCounts(reports) {
+        const counts = {};
+        reports.forEach(r => {
+            const label = humanizeCategory(r.ai_category);
+            counts[label] = (counts[label] || 0) + 1;
+        });
+        return Object.entries(counts)
+            .map(([label, count]) => ({ label, count }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    function computeStatusCounts(reports) {
+        const counts = {};
+        reports.forEach(r => {
+            counts[r.status] = (counts[r.status] || 0) + 1;
+        });
+        const total = reports.length || 1;
+        const ordered = STATUS_ORDER.filter(s => counts[s]);
+        const extras = Object.keys(counts).filter(s => !STATUS_ORDER.includes(s));
+        return [...ordered, ...extras].map(label => ({
+            label,
+            count: counts[label],
+            pct: Math.round((counts[label] / total) * 100),
+            color: STATUS_COLORS[label] || '#94a3b8'
+        }));
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str ?? '';
+        return div.innerHTML;
+    }
+
+    // ---------- Bar chart (SVG, no external libraries) ----------
+    function renderBarChart(data) {
+        const width = 640, height = 360;
+        const paddingLeft = 34, paddingBottom = 66, paddingTop = 16, paddingRight = 16;
+        const chartWidth = width - paddingLeft - paddingRight;
+        const chartHeight = height - paddingTop - paddingBottom;
+
+        const maxCount = Math.max(...data.map(d => d.count), 1);
+        const steps = Math.min(maxCount, 5) || 1;
+        const yMax = Math.ceil(maxCount / steps) * steps;
+
+        const barSlot = chartWidth / data.length;
+        const barWidth = Math.min(46, barSlot * 0.55);
+
+        let gridLines = '', yLabels = '';
+        for (let i = 0; i <= steps; i++) {
+            const value = Math.round((yMax / steps) * i);
+            const y = paddingTop + chartHeight - (value / yMax) * chartHeight;
+            gridLines += `<line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="#e2e8f0" stroke-dasharray="3,3" />`;
+            yLabels += `<text x="${paddingLeft - 8}" y="${y + 4}" font-size="12" fill="#94a3b8" text-anchor="end">${value}</text>`;
+        }
+
+        let bars = '', xLabels = '';
+        data.forEach((d, i) => {
+            const barHeight = (d.count / yMax) * chartHeight;
+            const x = paddingLeft + i * barSlot + (barSlot - barWidth) / 2;
+            const y = paddingTop + chartHeight - barHeight;
+            bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="3" fill="#2f7fd1" />`;
+
+            const labelX = x + barWidth / 2;
+            const labelY = paddingTop + chartHeight + 16;
+            xLabels += `<text x="${labelX.toFixed(1)}" y="${labelY}" font-size="11.5" fill="#64748b" text-anchor="end" transform="rotate(-28 ${labelX.toFixed(1)} ${labelY})">${escapeHtml(d.label)}</text>`;
+        });
+
+        return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+            ${gridLines}
+            <line x1="${paddingLeft}" y1="${paddingTop}" x2="${paddingLeft}" y2="${paddingTop + chartHeight}" stroke="#cbd5e1" />
+            <line x1="${paddingLeft}" y1="${paddingTop + chartHeight}" x2="${width - paddingRight}" y2="${paddingTop + chartHeight}" stroke="#cbd5e1" />
+            ${yLabels}
+            ${bars}
+            ${xLabels}
+        </svg>`;
+    }
+
+    // ---------- Donut chart (SVG, no external libraries) ----------
+    function polarToCartesian(cx, cy, r, angleDeg) {
+        const rad = (angleDeg - 90) * Math.PI / 180;
+        return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+    }
+
+    function describeDonutSlice(cx, cy, outerR, innerR, startAngle, endAngle) {
+        const startOuter = polarToCartesian(cx, cy, outerR, startAngle);
+        const endOuter = polarToCartesian(cx, cy, outerR, endAngle);
+        const startInner = polarToCartesian(cx, cy, innerR, endAngle);
+        const endInner = polarToCartesian(cx, cy, innerR, startAngle);
+        const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+        return [
+            `M ${startOuter.x.toFixed(2)} ${startOuter.y.toFixed(2)}`,
+            `A ${outerR} ${outerR} 0 ${largeArc} 1 ${endOuter.x.toFixed(2)} ${endOuter.y.toFixed(2)}`,
+            `L ${startInner.x.toFixed(2)} ${startInner.y.toFixed(2)}`,
+            `A ${innerR} ${innerR} 0 ${largeArc} 0 ${endInner.x.toFixed(2)} ${endInner.y.toFixed(2)}`,
+            'Z'
+        ].join(' ');
+    }
+
+    function renderDonutChart(data) {
+        const width = 640, height = 360;
+        const cx = width / 2, cy = height / 2;
+        const outerR = 92, innerR = 56;
+        const labelR = outerR + 60;
+        const total = data.reduce((sum, d) => sum + d.count, 0) || 1;
+
+        let angle = 0;
+        let slices = '', labels = '';
+
+        data.forEach(d => {
+            const sliceAngle = (d.count / total) * 360;
+            const startAngle = angle;
+            const endAngle = angle + sliceAngle;
+            const midAngle = (startAngle + endAngle) / 2;
+
+            slices += `<path d="${describeDonutSlice(cx, cy, outerR, innerR, startAngle, endAngle)}" fill="${d.color}" />`;
+
+            const outerPoint = polarToCartesian(cx, cy, outerR + 4, midAngle);
+            const bendPoint = polarToCartesian(cx, cy, labelR - 22, midAngle);
+            const labelPoint = polarToCartesian(cx, cy, labelR, midAngle);
+            const isRightSide = Math.sin(midAngle * Math.PI / 180) >= 0;
+            const anchor = isRightSide ? 'start' : 'end';
+            const textX = labelPoint.x + (isRightSide ? 6 : -6);
+
+            labels += `
+                <polyline points="${outerPoint.x.toFixed(1)},${outerPoint.y.toFixed(1)} ${bendPoint.x.toFixed(1)},${bendPoint.y.toFixed(1)} ${labelPoint.x.toFixed(1)},${labelPoint.y.toFixed(1)}"
+                          fill="none" stroke="${d.color}" stroke-width="1.5" />
+                <text x="${textX.toFixed(1)}" y="${(labelPoint.y + 4).toFixed(1)}" font-size="13" font-weight="600" fill="${d.color}" text-anchor="${anchor}">${escapeHtml(d.label)} (${d.pct}%)</text>
+            `;
+
+            angle = endAngle;
+        });
+
+        return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+            ${slices}
+            ${labels}
+        </svg>`;
+    }
+
+    async function loadAnalytics() {
+        const categoryEl = document.getElementById('categoryChart');
+        const statusEl = document.getElementById('statusChart');
+
+        try {
+            const res = await fetch(`${API_BASE}/reports`, { headers: authHeaders() });
+
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            if (!res.ok) throw new Error('Failed to load');
+
+            const reports = await res.json();
+
+            if (!Array.isArray(reports) || reports.length === 0) {
+                categoryEl.innerHTML = `<div class="empty-state">No reports yet.</div>`;
+                statusEl.innerHTML = `<div class="empty-state">No reports yet.</div>`;
+                return;
+            }
+
+            categoryEl.innerHTML = renderBarChart(computeCategoryCounts(reports));
+            statusEl.innerHTML = renderDonutChart(computeStatusCounts(reports));
+
+        } catch (err) {
+            console.error(err);
+            categoryEl.innerHTML = `<div class="empty-state">Could not load report data.</div>`;
+            statusEl.innerHTML = `<div class="empty-state">Could not load report data.</div>`;
+        }
+    }
+
+    window.addEventListener('load', () => {
+        if (!enforceWorkerAccess()) return;
+
+        const worker = getWorkerSession();
+        const badge = document.getElementById('workerName');
+        if (badge) badge.textContent = worker.first_name || worker.email || 'Worker';
+
+        loadAnalytics();
+    });
+</script>
+</body>
+</html>
