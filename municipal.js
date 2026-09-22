@@ -56,10 +56,20 @@ function debounce(fn, delay) {
 async function loadReports() {
     const status = document.getElementById('statusFilter').value;
     const search = document.getElementById('searchInput').value.trim();
+    const categoryEl = document.getElementById('categoryFilter');
+    const category = categoryEl ? categoryEl.value : '';
 
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (search) params.set('search', search);
+    if (category) params.set('category', category);
+
+    // Only municipal-reports.html sets window.reportsView (via its
+    // Active/History tabs). Pages that don't define it keep the
+    // default server-side behavior: active reports only.
+    if (typeof window.reportsView !== 'undefined' && window.reportsView === 'history') {
+        params.set('archived', 'true');
+    }
 
     const tbody = document.getElementById('reportsBody');
 
@@ -76,7 +86,10 @@ async function loadReports() {
         const reports = await res.json();
 
         if (!Array.isArray(reports) || reports.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No reports match these filters.</td></tr>`;
+            const emptyMessage = (typeof window.reportsView !== 'undefined' && window.reportsView === 'history')
+                ? 'No archived reports yet.'
+                : 'No reports match these filters.';
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${emptyMessage}</td></tr>`;
             return;
         }
 
@@ -90,6 +103,7 @@ async function loadReports() {
             <tr ${clickable ? `onclick="viewReport(${r.id})"` : ''} class="${clickable ? '' : 'view-only'}">
                 <td>${r.image ? `<img class="thumb" src="${r.image}">` : `<div class="thumb"></div>`}</td>
                 <td>${escapeHtml(r.description)}</td>
+                <td>${r.ai_category ? `${escapeHtml(r.ai_category)} <span style="color:#94a3b8;font-size:11px;">(${Math.round(r.ai_confidence * 100)}%)</span>` : '<span style="color:#94a3b8;">Unclassified</span>'}</td>
                 <td>${escapeHtml(r.first_name)} ${escapeHtml(r.last_name)}</td>
                 <td>${escapeHtml(r.location || 'Not provided')}</td>
                 <td>${new Date(r.date).toLocaleDateString('en-ZA')}</td>
@@ -141,12 +155,15 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// Unread count now reflects the combined notifications inbox
+// (new reports + new feedback), not just unread feedback —
+// so the bell badge matches what municipal-notifications.html shows.
 async function loadUnreadBadge() {
     const badge = document.getElementById('bellBadge');
     if (!badge) return;
 
     try {
-        const res = await fetch(`${API_BASE}/feedback/unread-count`, {
+        const res = await fetch(`${API_BASE}/notifications/unread-count`, {
             headers: authHeaders()
         });
         if (!res.ok) return;
@@ -159,7 +176,7 @@ async function loadUnreadBadge() {
             badge.classList.remove('show');
         }
     } catch (err) {
-        console.error('Could not load unread feedback count:', err);
+        console.error('Could not load unread notification count:', err);
     }
 }
 
@@ -172,8 +189,7 @@ window.addEventListener('load', () => {
         badge.textContent = worker.first_name || worker.email || 'Worker';
     }
 
-    // Only the dashboard has this table — municipal-report.html and
-    // municipal-feedback.html run their own load logic instead.
+    
     if (document.getElementById('reportsBody')) {
         loadReports();
     }
