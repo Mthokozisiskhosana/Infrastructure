@@ -22,8 +22,6 @@ const RESET_CODE_TTL_MINUTES = 10;
 
 // ======================================
 // JWT CONFIG
-// JWT_SECRET must be set in .env — never hardcode this or commit it.
-// Generate one with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 // ======================================
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = "8h";
@@ -34,8 +32,6 @@ if (!JWT_SECRET) {
 }
 
 function generateToken(user) {
-    // Keep the payload minimal — id and role are all any route needs
-    // to authorize a request. Don't put email/phone/etc in the token.
     return jwt.sign(
         { id: user.id, role: user.role },
         JWT_SECRET,
@@ -43,9 +39,6 @@ function generateToken(user) {
     );
 }
 
-// Attaches req.user = { id, role } if the token is valid.
-// Responds 401 if missing/invalid, so routes using this never run
-// with an unauthenticated request.
 function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -63,8 +56,6 @@ function requireAuth(req, res, next) {
     }
 }
 
-// Use after requireAuth. Pass the roles allowed to access the route.
-// e.g. requireRole("municipal_worker", "supervisor")
 function requireRole(...allowedRoles) {
     return (req, res, next) => {
         if (!req.user || !allowedRoles.includes(req.user.role)) {
@@ -75,7 +66,7 @@ function requireRole(...allowedRoles) {
 }
 
 // ======================================
-// POSTGRESQL CONFIG (from .env — see .env.example)
+// POSTGRESQL CONFIG
 // ======================================
 const pool = new Pool({
     host: process.env.DB_HOST,
@@ -95,25 +86,22 @@ pool.connect()
     .catch(err => console.log("❌ DB Connection Failed:", err));
 
 // ======================================
-// EMAIL TRANSPORT  (for password reset codes)
+// EMAIL TRANSPORT
 // ======================================
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT) || 587,
-    secure: false, // true for port 465
+    secure: false,
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
     }
 });
 
-// Generates a random 6-digit code, e.g. "042317"
 function generateOtp() {
     return crypto.randomInt(0, 1000000).toString().padStart(6, "0");
 }
 
-// We never store the plain code in the DB — only its hash — same
-// principle as passwords, in case the DB is ever exposed.
 function hashOtp(code) {
     return crypto.createHash("sha256").update(code).digest("hex");
 }
@@ -129,6 +117,45 @@ async function sendResetCodeEmail(toEmail, code) {
             <p>This code expires in ${RESET_CODE_TTL_MINUTES} minutes. If you didn't request this, you can ignore this email — your password will not change.</p>
         `
     });
+}
+
+// ======================================
+// NOTIFICATIONS helper
+// ======================================
+// userId is optional: leave it null for a staff-wide notification
+// (new report / new feedback). Pass a specific user's id to create a
+// *personal* notification only that person can see — e.g. "the
+// municipality replied to your feedback".
+async function createNotification(type, relatedId, title, message, userId = null) {
+    try {
+        await pool.query(
+            `INSERT INTO Notifications (type, related_id, title, message, user_id)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [type, relatedId, title, message, userId]
+        );
+    } catch (err) {
+        console.log(`[notification] Failed to create ${type} notification:`, err.message);
+    }
+}
+
+function truncate(text, maxLen) {
+    if (!text) return "";
+    return text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
+}
+
+async function getUserDisplayName(userId) {
+    try {
+        const result = await pool.query(
+            "SELECT first_name, last_name FROM Users WHERE id = $1",
+            [userId]
+        );
+        if (result.rows.length === 0) return "A community member";
+        const { first_name, last_name } = result.rows[0];
+        return `${first_name || ""} ${last_name || ""}`.trim() || "A community member";
+    } catch (err) {
+        console.log("[notification] Could not look up submitter name:", err.message);
+        return "A community member";
+    }
 }
 
 // ======================================
@@ -149,7 +176,6 @@ app.post("/register", async (req, res) => {
         return res.status(400).json({ message: "Please enter a valid South African phone number (e.g., 0712345678 or +27712345678)" });
     }
 
-    // --- Enforce password strength server-side (source of truth) ---
     const strength = validatePasswordStrength(password);
     if (!strength.valid) {
         return res.status(400).json({ message: strength.message });
@@ -165,14 +191,8 @@ app.post("/register", async (req, res) => {
             return res.status(400).json({ message: "Email already exists" });
         }
 
-        // --- Hash the password before storing it ---
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-        // Public registration always creates a community_member.
-        // Municipal worker / supervisor / admin accounts are never
-        // self-service — they're created directly in the DB by an
-        // administrator (see migration_add_role.sql). This prevents
-        // anyone from registering themselves as staff via the API.
         await pool.query(
             `INSERT INTO Users (first_name, last_name, email, phone, password, role)
              VALUES ($1, $2, $3, $4, $5, 'community_member')`,
@@ -186,7 +206,6 @@ app.post("/register", async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-
 
 // ======================================
 // LOGIN API
@@ -206,8 +225,6 @@ app.post("/login", async (req, res) => {
             [email]
         );
 
-        // Same generic message whether the email doesn't exist or the
-        // password is wrong — don't reveal which one it was.
         if (result.rows.length === 0) {
             return res.status(401).json({ message: "Invalid email or password" });
         }
@@ -238,11 +255,8 @@ app.post("/login", async (req, res) => {
     }
 });
 
-
 // ======================================
-// FORGOT PASSWORD — STEP 1: email a 6-digit code
-// Always responds the same way, whether or not the email exists,
-// so this endpoint can't be used to find out which emails are registered.
+// FORGOT PASSWORD — STEP 1
 // ======================================
 app.post("/forgot-password", async (req, res) => {
     const { email } = req.body;
@@ -259,7 +273,6 @@ app.post("/forgot-password", async (req, res) => {
         );
 
         if (checkUser.rows.length === 0) {
-            // Don't reveal whether the email exists
             return res.json(genericResponse);
         }
 
@@ -279,17 +292,12 @@ app.post("/forgot-password", async (req, res) => {
 
     } catch (err) {
         console.log(err);
-        // Still don't leak details to the client
         res.status(500).json({ message: "Something went wrong. Please try again later." });
     }
 });
 
-
 // ======================================
-// FORGOT PASSWORD — STEP 2: verify the code (before showing the password form)
-// This does NOT consume the code — it's just a UX check. The code is
-// re-verified for real in step 3, so this endpoint can't be bypassed
-// by skipping straight to /reset-password.
+// FORGOT PASSWORD — STEP 2
 // ======================================
 app.post("/verify-code", async (req, res) => {
     const { email, code } = req.body;
@@ -327,11 +335,8 @@ app.post("/verify-code", async (req, res) => {
     }
 });
 
-
 // ======================================
-// FORGOT PASSWORD — STEP 3: set the new password
-// Re-checks the code + expiry again here — this is the real gate,
-// step 2 was just for UX.
+// FORGOT PASSWORD — STEP 3
 // ======================================
 app.post("/reset-password", async (req, res) => {
     const { email, code, password } = req.body;
@@ -367,7 +372,6 @@ app.post("/reset-password", async (req, res) => {
 
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-        // Update password and invalidate the code (single-use)
         await pool.query(
             `UPDATE Users
              SET password = $1, reset_token = NULL, reset_token_expiry = NULL
@@ -383,10 +387,58 @@ app.post("/reset-password", async (req, res) => {
     }
 });
 
-
 // ======================================
 // SUBMIT REPORT API
 // ======================================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = deg => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function parseLocation(locationStr) {
+    if (!locationStr) return null;
+    const parts = locationStr.split(',').map(s => parseFloat(s.trim()));
+    if (parts.length !== 2 || parts.some(isNaN)) return null;
+    return { lat: parts[0], lng: parts[1] };
+}
+
+const DUPLICATE_RADIUS_METERS = 100;
+
+// ======================================
+// AUTO-ARCHIVING
+// ======================================
+const ARCHIVE_DELAY_HOURS = Number(process.env.ARCHIVE_DELAY_HOURS) || 24;
+const ARCHIVE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+
+async function archiveOldResolvedReports() {
+    try {
+        const result = await pool.query(
+            `UPDATE Reports
+             SET is_archived = true
+             WHERE status = 'Resolved'
+               AND is_archived = false
+               AND resolved_at IS NOT NULL
+               AND resolved_at <= NOW() - ($1 || ' hours')::interval
+             RETURNING id`,
+            [ARCHIVE_DELAY_HOURS]
+        );
+        if (result.rows.length > 0) {
+            console.log(`[archiver] Moved ${result.rows.length} resolved report(s) into history.`);
+        }
+    } catch (err) {
+        console.log('[archiver] Failed to run archiving check:', err.message);
+    }
+}
+
+setInterval(archiveOldResolvedReports, ARCHIVE_CHECK_INTERVAL_MS);
+archiveOldResolvedReports();
+
 app.post("/submit-report", requireAuth, async (req, res) => {
     const { user_id, description, image, location } = req.body;
 
@@ -394,19 +446,119 @@ app.post("/submit-report", requireAuth, async (req, res) => {
         return res.status(400).json({ message: "User ID and description are required" });
     }
 
-    // A community member can only submit a report as themselves.
     if (req.user.role === "community_member" && req.user.id !== user_id) {
         return res.status(403).json({ message: "You can only submit reports for your own account" });
     }
 
+    const newLocation = parseLocation(location);
+
+    if (newLocation && image) {
+        try {
+            const candidatesResult = await pool.query(
+                `SELECT id, image, location FROM Reports
+                 WHERE status != 'Resolved' AND location IS NOT NULL
+                 ORDER BY date DESC
+                 LIMIT 50`
+            );
+
+            const nearbyCandidates = candidatesResult.rows.filter(r => {
+                const loc = parseLocation(r.location);
+                if (!loc || !r.image) return false;
+                const distance = haversineDistance(newLocation.lat, newLocation.lng, loc.lat, loc.lng);
+                return distance <= DUPLICATE_RADIUS_METERS;
+            }).slice(0, 10);
+
+            console.log(`[duplicate check] Found ${candidatesResult.rows.length} active reports, ${nearbyCandidates.length} within ${DUPLICATE_RADIUS_METERS}m`);
+
+            const newImageBuffer = Buffer.from(
+                image.includes(',') ? image.split(',')[1] : image, 'base64'
+            );
+
+            for (const candidate of nearbyCandidates) {
+                const candidateBuffer = Buffer.from(
+                    candidate.image.includes(',') ? candidate.image.split(',')[1] : candidate.image, 'base64'
+                );
+
+                const formData = new FormData();
+                formData.append('image1', new Blob([newImageBuffer]), 'new.jpg');
+                formData.append('image2', new Blob([candidateBuffer]), 'existing.jpg');
+
+                const dupRes = await fetch(`${process.env.AI_SERVICE_URL || 'http://localhost:8000'}/check-duplicate`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (dupRes.ok) {
+                    const dupData = await dupRes.json();
+                    console.log(`[duplicate check] Compared against report #${candidate.id}: is_duplicate=${dupData.is_duplicate}, confidence=${dupData.confidence}`);
+                    if (dupData.is_duplicate && dupData.confidence >= 0.7) {
+                        return res.status(409).json({
+                            message: "This report has been submitted before.",
+                            duplicate_of: candidate.id
+                        });
+                    }
+                } else {
+                    console.log(`[duplicate check] AI service returned non-OK status ${dupRes.status} for report #${candidate.id}`);
+                }
+            }
+        } catch (err) {
+            console.log('[duplicate check] Failed, proceeding with submission:', err.message);
+        }
+    } else {
+        console.log(`[duplicate check] Skipped — newLocation: ${!!newLocation}, image present: ${!!image}`);
+    }
+
+    let ai_category = null;
+    let ai_confidence = null;
+
+    if (image) {
+        try {
+            const base64Data = image.includes(',') ? image.split(',')[1] : image;
+            const buffer = Buffer.from(base64Data, 'base64');
+
+            const formData = new FormData();
+            formData.append('image', new Blob([buffer]), 'report.jpg');
+
+            const aiRes = await fetch(`${process.env.AI_SERVICE_URL || 'http://localhost:8000'}/classify`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (aiRes.ok) {
+                const aiData = await aiRes.json();
+                ai_category = aiData.category;
+                ai_confidence = aiData.confidence;
+            } else {
+                console.log('AI service responded with status:', aiRes.status);
+            }
+        } catch (err) {
+            console.log('AI service unreachable, submitting report without classification:', err.message);
+        }
+    }
+
     try {
-        await pool.query(
-            `INSERT INTO Reports (user_id, description, image, location)
-             VALUES ($1, $2, $3, $4)`,
-            [user_id, description, image || null, location || null]
+        const insertResult = await pool.query(
+            `INSERT INTO Reports (user_id, description, image, location, ai_category, ai_confidence)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id`,
+            [user_id, description, image || null, location || null, ai_category, ai_confidence]
         );
 
-        res.json({ message: "Report submitted successfully" });
+        const newReportId = insertResult.rows[0].id;
+
+        const submitterName = await getUserDisplayName(user_id);
+        await createNotification(
+            "report",
+            newReportId,
+            `New report from ${submitterName}`,
+            truncate(description, 120)
+        );
+
+        res.json({
+            message: "Report submitted successfully",
+            ai_category,
+            ai_confidence
+        });
 
     } catch (err) {
         console.log(err);
@@ -419,21 +571,19 @@ app.post("/submit-report", requireAuth, async (req, res) => {
 // ======================================
 app.get("/my-reports/:user_id", requireAuth, async (req, res) => {
     const { user_id } = req.params;
+    const showArchived = req.query.archived === 'true';
 
-    // A community member can only view their own reports.
-    // Workers/supervisors are allowed to look up any user's reports
-    // (needed for the municipal report-detail screen).
     if (req.user.role === "community_member" && String(req.user.id) !== String(user_id)) {
         return res.status(403).json({ message: "You can only view your own reports" });
     }
 
     try {
         const result = await pool.query(
-            `SELECT id, description, image, location, status, date
+            `SELECT id, description, image, location, status, date, ai_category, ai_confidence
              FROM Reports
-             WHERE user_id = $1
+             WHERE user_id = $1 AND is_archived = $2
              ORDER BY date DESC`,
-            [user_id]
+            [user_id, showArchived]
         );
 
         res.json(result.rows);
@@ -470,19 +620,19 @@ app.delete("/clear-reports/:user_id", requireAuth, async (req, res) => {
 
 // ======================================
 // GET ALL REPORTS (Municipality Dashboard)
-// Supports optional filters: ?status=Received&search=pothole
 // ======================================
 app.get("/reports", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
-    const { status, search } = req.query;
+    const { status, search, category } = req.query;
+    const showArchived = req.query.archived === 'true';
 
     let query = `
-        SELECT r.id, r.description, r.image, r.location, r.status, r.date,
+        SELECT r.id, r.description, r.image, r.location, r.status, r.date, r.ai_category, r.ai_confidence,
                u.first_name, u.last_name, u.email
         FROM Reports r
         JOIN Users u ON r.user_id = u.id
     `;
-    const conditions = [];
-    const values = [];
+    const conditions = [`r.is_archived = $1`];
+    const values = [showArchived];
 
     if (status) {
         values.push(status);
@@ -492,9 +642,11 @@ app.get("/reports", requireAuth, requireRole("municipal_worker", "supervisor"), 
         values.push(`%${search}%`);
         conditions.push(`r.description ILIKE $${values.length}`);
     }
-    if (conditions.length > 0) {
-        query += " WHERE " + conditions.join(" AND ");
+    if (category) {
+        values.push(category);
+        conditions.push(`r.ai_category = $${values.length}`);
     }
+    query += " WHERE " + conditions.join(" AND ");
     query += " ORDER BY r.date DESC";
 
     try {
@@ -507,12 +659,12 @@ app.get("/reports", requireAuth, requireRole("municipal_worker", "supervisor"), 
 });
 
 // ======================================
-// GET SINGLE REPORT (Municipality Report Detail Screen)
+// GET SINGLE REPORT
 // ======================================
 app.get("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT r.id, r.description, r.image, r.location, r.status, r.date,
+            `SELECT r.id, r.description, r.image, r.location, r.status, r.date, r.ai_category, r.ai_confidence,
                     u.first_name, u.last_name, u.email
              FROM Reports r
              JOIN Users u ON r.user_id = u.id
@@ -532,8 +684,7 @@ app.get("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor
 });
 
 // ======================================
-// UPDATE REPORT STATUS (Municipality Dashboard)
-// Body: { status: "Under Review" | "Assigned" | "Resolved" | ... }
+// UPDATE REPORT STATUS
 // ======================================
 app.patch("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     const { id } = req.params;
@@ -546,7 +697,10 @@ app.patch("/reports/:id", requireAuth, requireRole("municipal_worker", "supervis
 
     try {
         const result = await pool.query(
-            `UPDATE Reports SET status = $1 WHERE id = $2
+            `UPDATE Reports
+             SET status = $1,
+                 resolved_at = CASE WHEN $1 = 'Resolved' THEN NOW() ELSE NULL END
+             WHERE id = $2
              RETURNING id, description, status`,
             [status, id]
         );
@@ -563,15 +717,9 @@ app.patch("/reports/:id", requireAuth, requireRole("municipal_worker", "supervis
 });
 
 // ======================================
-// CREATE STAFF ACCOUNT (Supervisor/Admin only)
-// Generates a random temporary password, emails it to the new
-// worker, and requires nothing be typed by the caller except the
-// new person's details. Matches SRS 2.3: Supervisors get user
-// management privileges.
+// CREATE STAFF ACCOUNT
 // ======================================
 function generateTempPassword() {
-    // 12 chars, guaranteed to include upper/lower/digit/symbol so it
-    // passes validatePasswordStrength without a retry loop.
     const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     const lower = "abcdefghijkmnpqrstuvwxyz";
     const digits = "23456789";
@@ -587,7 +735,6 @@ function generateTempPassword() {
     for (let i = pwd.length; i < 12; i++) {
         pwd.push(all[crypto.randomInt(all.length)]);
     }
-    // Shuffle so the guaranteed chars aren't always in the same positions
     for (let i = pwd.length - 1; i > 0; i--) {
         const j = crypto.randomInt(i + 1);
         [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
@@ -627,8 +774,6 @@ app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"),
             [first_name, last_name, email, phone, passwordHash, role]
         );
 
-        // Email the temp password directly to the new worker — the
-        // supervisor creating the account never sees or handles it.
         await transporter.sendMail({
             from: process.env.SMTP_FROM || '"Community Portal" <no-reply@communityportal.local>',
             to: email,
@@ -685,17 +830,11 @@ async function sendSecurityEmail(toEmail, subject, htmlBody) {
         console.log(`Security email sent to ${toEmail}`);
     } catch (err) {
         console.log("Failed to send security email:", err.message);
-        // Don't throw — we don't want to block the profile update if email fails
     }
 }
 
 // ======================================
-// UPDATE PROFILE (email, phone, picture)
-// Sends security alerts if email/phone changed.
-// ======================================
-// ======================================
-// UPDATE PROFILE (phone, picture only — email changes go through
-// the verified request/confirm flow below)
+// UPDATE PROFILE
 // ======================================
 app.post("/update-profile", requireAuth, async (req, res) => {
     const { id, phone, profile_picture } = req.body;
@@ -771,10 +910,8 @@ app.post("/update-profile", requireAuth, async (req, res) => {
 });
 
 // ======================================
-// FEEDBACK — Community member submits, municipal staff view
+// FEEDBACK
 // ======================================
-
-// Submit feedback (any authenticated user)
 app.post("/feedback", requireAuth, async (req, res) => {
     const message = (req.body.message || "").trim();
     if (!message) {
@@ -785,10 +922,19 @@ app.post("/feedback", requireAuth, async (req, res) => {
     }
 
     try {
-        await pool.query(
-            "INSERT INTO Feedback (user_id, message) VALUES ($1, $2)",
+        const insertResult = await pool.query(
+            "INSERT INTO Feedback (user_id, message) VALUES ($1, $2) RETURNING id",
             [req.user.id, message]
         );
+
+        const submitterName = await getUserDisplayName(req.user.id);
+        await createNotification(
+            "feedback",
+            insertResult.rows[0].id,
+            `New feedback from ${submitterName}`,
+            truncate(message, 120)
+        );
+
         res.json({ message: "Feedback sent. Thank you!" });
     } catch (err) {
         console.log(err);
@@ -796,11 +942,13 @@ app.post("/feedback", requireAuth, async (req, res) => {
     }
 });
 
-// A community member's own feedback history
 app.get("/feedback/mine", requireAuth, async (req, res) => {
     try {
         const result = await pool.query(
-            "SELECT id, message, date FROM Feedback WHERE user_id = $1 ORDER BY date DESC",
+            `SELECT id, message, date, reply_message, reply_date
+             FROM Feedback
+             WHERE user_id = $1
+             ORDER BY date DESC`,
             [req.user.id]
         );
         res.json(result.rows);
@@ -810,14 +958,16 @@ app.get("/feedback/mine", requireAuth, async (req, res) => {
     }
 });
 
-// All feedback (municipal staff only)
 app.get("/feedback", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT f.id, f.message, f.date, f.is_read,
-                    u.first_name, u.last_name, u.email
+                    f.reply_message, f.reply_date,
+                    u.first_name, u.last_name, u.email,
+                    ru.first_name AS replied_by_first_name, ru.last_name AS replied_by_last_name
              FROM Feedback f
              JOIN Users u ON f.user_id = u.id
+             LEFT JOIN Users ru ON f.replied_by = ru.id
              ORDER BY f.date DESC`
         );
         res.json(result.rows);
@@ -827,7 +977,6 @@ app.get("/feedback", requireAuth, requireRole("municipal_worker", "supervisor"),
     }
 });
 
-// Unread count, for the notification bell badge
 app.get("/feedback/unread-count", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     try {
         const result = await pool.query(
@@ -840,7 +989,6 @@ app.get("/feedback/unread-count", requireAuth, requireRole("municipal_worker", "
     }
 });
 
-// Mark one message as read (municipal staff only)
 app.patch("/feedback/:id/read", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     try {
         await pool.query(
@@ -854,16 +1002,177 @@ app.patch("/feedback/:id/read", requireAuth, requireRole("municipal_worker", "su
     }
 });
 
+// Reply to a piece of feedback (municipal staff only). Notifies the
+// community member who submitted it via a personal notification.
+app.patch("/feedback/:id/reply", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    const { id } = req.params;
+    const reply = (req.body.reply || "").trim();
+
+    if (!reply) {
+        return res.status(400).json({ message: "Please write a reply before sending." });
+    }
+    if (reply.length > 2000) {
+        return res.status(400).json({ message: "Reply is too long (max 2000 characters)." });
+    }
+
+    try {
+        const result = await pool.query(
+            `UPDATE Feedback
+             SET reply_message = $1, reply_date = NOW(), replied_by = $2
+             WHERE id = $3
+             RETURNING id, user_id`,
+            [reply, req.user.id, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Feedback not found" });
+        }
+
+        const feedback = result.rows[0];
+
+        await createNotification(
+            "feedback_reply",
+            feedback.id,
+            "The municipality replied to your feedback",
+            truncate(reply, 120),
+            feedback.user_id
+        );
+
+        res.json({ message: "Reply sent" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ======================================
+// NOTIFICATIONS — municipal staff inbox
+// ======================================
+app.get("/notifications", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT id, type, related_id, title, message, is_read, date
+             FROM Notifications
+             WHERE user_id IS NULL
+             ORDER BY date DESC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.get("/notifications/unread-count", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT COUNT(*) FROM Notifications WHERE user_id IS NULL AND is_read = false"
+        );
+        res.json({ count: parseInt(result.rows[0].count, 10) });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.patch("/notifications/:id/read", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            "UPDATE Notifications SET is_read = true WHERE id = $1 AND user_id IS NULL RETURNING id",
+            [req.params.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Notification not found" });
+        }
+        res.json({ message: "Marked as read" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.patch("/notifications/mark-all-read", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        await pool.query(
+            "UPDATE Notifications SET is_read = true WHERE user_id IS NULL AND is_read = false"
+        );
+        res.json({ message: "All notifications marked as read" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ======================================
+// NOTIFICATIONS — personal inbox for community members
+// Every query is scoped to req.user.id, so a citizen can only ever
+// see or mark their own notifications (e.g. a reply to their feedback).
+// ======================================
+
+app.get("/my-notifications", requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT id, type, related_id, title, message, is_read, date
+             FROM Notifications
+             WHERE user_id = $1
+             ORDER BY date DESC`,
+            [req.user.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.get("/my-notifications/unread-count", requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT COUNT(*) FROM Notifications WHERE user_id = $1 AND is_read = false",
+            [req.user.id]
+        );
+        res.json({ count: parseInt(result.rows[0].count, 10) });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.patch("/my-notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(
+            "UPDATE Notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING id",
+            [req.params.id, req.user.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Notification not found" });
+        }
+        res.json({ message: "Marked as read" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.patch("/my-notifications/mark-all-read", requireAuth, async (req, res) => {
+    try {
+        await pool.query(
+            "UPDATE Notifications SET is_read = true WHERE user_id = $1 AND is_read = false",
+            [req.user.id]
+        );
+        res.json({ message: "All notifications marked as read" });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
 function isValidEmailFormat(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 // ======================================
-// REQUEST EMAIL CHANGE — step 1: send a code to the NEW address.
-// Nothing in the database changes yet — the real email is untouched
-// until the code is confirmed below. This is what actually catches
-// typos: if the address is wrong, no code arrives, and the person
-// finds out immediately instead of silently losing access later.
+// REQUEST EMAIL CHANGE
 // ======================================
 app.post("/profile/request-email-change", requireAuth, async (req, res) => {
     const email = (req.body.newEmail || "").trim().toLowerCase();
@@ -917,7 +1226,7 @@ app.post("/profile/request-email-change", requireAuth, async (req, res) => {
 });
 
 // ======================================
-// CONFIRM EMAIL CHANGE — step 2: only now does the real email update.
+// CONFIRM EMAIL CHANGE
 // ======================================
 app.post("/profile/confirm-email-change", requireAuth, async (req, res) => {
     const { code } = req.body;
@@ -990,8 +1299,6 @@ app.post("/change-password", requireAuth, async (req, res) => {
         return res.status(400).json({ message: "All fields are required" });
     }
 
-    // You can only change your own password — an id in the body
-    // isn't trusted on its own, it must match the authenticated token.
     if (String(req.user.id) !== String(id)) {
         return res.status(403).json({ message: "You can only change your own password" });
     }
@@ -1023,7 +1330,6 @@ app.post("/change-password", requireAuth, async (req, res) => {
             [hash, id]
         );
 
-        // Notify user that password was changed
         await sendSecurityEmail(
             user.email,
             "Your Password Has Been Changed",
@@ -1047,7 +1353,6 @@ app.post("/change-password", requireAuth, async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
-
 
 // ======================================
 // START SERVER
