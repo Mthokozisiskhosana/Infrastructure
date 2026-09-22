@@ -161,6 +161,33 @@
   .status-Assigned  { color: var(--assigned); background: var(--assigned-bg); }
   .status-Resolved  { color: var(--resolved); background: var(--resolved-bg); }
 
+  .view-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    width: fit-content;
+  }
+  .view-tab {
+    border: none;
+    background: none;
+    padding: 8px 18px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .view-tab.active {
+    background: var(--navy-dark);
+    color: #fff;
+  }
+  .view-tab:not(.active):hover { background: #f1f5f9; }
+
   .empty-state {
     text-align: center;
     padding: 48px 16px;
@@ -177,8 +204,7 @@
     <a href="municipal-dashboard.html">Dashboard</a>
     <a href="municipal-reports.html" class="active">Reports</a>
     <a href="municipal-feedback.html">Feedback</a>
-    <a href="#">Analytics</a>
-    <a href="#">Settings</a>
+    <a href="municipal-analytics.html">Analytics</a>
   </nav>
   <div class="sidebar-bottom">
     <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
@@ -191,8 +217,20 @@
     <span class="worker-badge" id="workerName">Loading worker...</span>
   </header>
 
-  <div class="filters">
+  <div class="view-tabs">
+    <button class="view-tab active" id="activeTabBtn" onclick="switchReportsView('active')">Active</button>
+    <button class="view-tab" id="historyTabBtn" onclick="switchReportsView('history')">History</button>
+  </div>
+
+<div class="filters">
     <input type="text" id="searchInput" placeholder="Search by description..." oninput="debouncedLoad()">
+    <select id="categoryFilter" onchange="loadReports()">
+      <option value="">All categories</option>
+      <option value="pothole">Pothole</option>
+      <option value="streetlight">Streetlight</option>
+      <option value="water_leak">Water Leak</option>
+      <option value="other">Other</option>
+    </select>
     <select id="statusFilter" onchange="loadReports()">
       <option value="">All statuses</option>
       <option value="Received">Received</option>
@@ -207,6 +245,7 @@
       <tr>
         <th>Image</th>
         <th>Description</th>
+        <th>AI Category</th>
         <th>Reported by</th>
         <th>Location</th>
         <th>Date</th>
@@ -220,6 +259,19 @@
 </main>
 
 <script>const ROWS_CLICKABLE = true;</script>
+<script>
+    // Tracked here (not in municipal.js) since only this page has the
+    // tabs — municipal.js just needs to know which view is selected
+    // when it builds the /reports request.
+    window.reportsView = 'active'; // 'active' | 'history'
+
+    function switchReportsView(view) {
+        window.reportsView = view;
+        document.getElementById('activeTabBtn').classList.toggle('active', view === 'active');
+        document.getElementById('historyTabBtn').classList.toggle('active', view === 'history');
+        loadReports();
+    }
+</script>
 <script src="municipal.js"></script>
 </body>
 </html>
