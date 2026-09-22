@@ -231,8 +231,8 @@
     <a href="municipal-dashboard.html" class="active">Dashboard</a>
     <a href="municipal-reports.html">Reports</a>
     <a href="municipal-feedback.html">Feedback</a>
-    <a href="#">Analytics</a>
-    <a href="#">Settings</a>
+    <a href="municipal-analytics.html">Analytics</a>
+  
   </nav>
   <div class="sidebar-bottom">
     <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
@@ -329,6 +329,17 @@
 
                     <div class="field-label">Current Status</div>
                     <span class="${pillClass(r.status)}">${escapeHtml(r.status)}</span>
+
+                    ${r.ai_category ? `
+                        <div class="field-label">AI Classification</div>
+                        <div class="field-value">
+                            ${escapeHtml(r.ai_category)}
+                            <span style="color: var(--muted); font-size: 12px;">(${Math.round(r.ai_confidence * 100)}% confidence)</span>
+                        </div>
+                    ` : `
+                        <div class="field-label">AI Classification</div>
+                        <div class="field-value" style="color: var(--muted);">Not available</div>
+                    `}
                 </div>
 
                 <div class="card">
