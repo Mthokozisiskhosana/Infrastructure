@@ -6,85 +6,42 @@
 <link rel="stylesheet" href="style.css">
 <title>CIRIS Dashboard</title>
 <style>
-    /* Status-list styles, folded in from status.html */
-    .status-section {
-        margin-bottom: 18px;
+    /* Bell icon added to the header, next to the profile avatar */
+    .header-icons {
+        display: flex;
+        align-items: center;
+        gap: 14px;
     }
-    .status-section-title {
-        font-size: 13px;
+    .bell-btn {
+        position: relative;
+        text-decoration: none;
+        color: inherit;
+        font-size: 18px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+    }
+    .bell-btn svg {
+        width: 22px;
+        height: 22px;
+        stroke: currentColor;
+    }
+    .bell-badge {
+        position: absolute;
+        top: -5px;
+        right: -7px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 10px;
         font-weight: 700;
-        color: #475569;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .report-item {
-        background: white;
-        border-radius: 10px;
-        padding: 14px;
-        border: 1px solid #e2e8f0;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-    }
-    .report-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 16px;
-        flex-shrink: 0;
-    }
-    .report-content {
-        flex: 1;
-        min-width: 0;
-    }
-    .report-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: #0f172a;
-        margin-bottom: 4px;
-        word-break: break-word;
-    }
-    .report-meta {
-        font-size: 12px;
-        color: #64748b;
-    }
-    .status-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 4px;
-    }
-    .dot-pending { background: #f59e0b; }
-    .dot-progress { background: #3b82f6; }
-    .dot-resolved { background: #10b981; }
-
-    .thumb {
-        width: 44px;
-        height: 44px;
-        border-radius: 8px;
-        object-fit: cover;
-        background: #e2e8f0;
-        flex-shrink: 0;
-    }
-
-    .empty-state {
+        padding: 1px 5px;
+        border-radius: 999px;
+        min-width: 16px;
         text-align: center;
-        padding: 30px 15px;
-        color: #94a3b8;
-        font-size: 14px;
+        line-height: 1.4;
+        display: none;
     }
-    .loading-spinner {
-        text-align: center;
-        padding: 40px;
-        color: #64748b;
-    }
+    .bell-badge.show { display: inline-block; }
 </style>
 </head>
 
@@ -94,7 +51,16 @@
 <div class="header">
     <a href="#" onclick="openSidebar()">☰</a>
     <div>Dashboard</div>
-    <div>👤</div>
+    <div class="header-icons">
+        <a href="notifications.html" class="bell-btn" aria-label="Notifications">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c0.5-1 2-3 2-7"/>
+                <path d="M10 19a2 2 0 0 0 4 0"/>
+            </svg>
+            <span class="bell-badge" id="citizenBellBadge"></span>
+        </a>
+        <div onclick="openSidebar()">👤</div>
+    </div>
 </div>
 
 <!-- Sidebar -->
@@ -112,6 +78,13 @@
   <div class="sidebar-nav">
     <p onclick="goToProfile()">👤 Profile</p>
     <p onclick="window.location.href='feedback.html'">💬 Feedback</p>
+    <p onclick="window.location.href='notifications.html'" style="display:flex; align-items:center; gap:8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 6 2 7H4c0.5-1 2-3 2-7"/>
+            <path d="M10 19a2 2 0 0 0 4 0"/>
+        </svg>
+        Notifications
+    </p>
   </div>
 
   <div class="sidebar-footer">
@@ -124,76 +97,105 @@
 <!-- MAIN -->
 <div class="app-container">
 
-<button id="Reportb" onclick="window.location.href='dash.html'">
-    + New Report
-</button>
+<!-- WELCOME HERO -->
+<div class="welcome-card">
+    <div class="welcome-content">
+        <div class="welcome-text">
+            <div class="welcome-label">WELCOME BACK</div>
+            <h1>Hello, <span id="welcomeName">Community Member</span> 👋</h1>
+            <p>Ready to help your community today?</p>
+        </div>
 
-<!-- OVERVIEW -->
-<div class="content-section">
-<span class="section-label">Community Overview</span>
-
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-label">Total Reports</div>
-    <div class="stat-value" id="countTotal">0</div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-label">Resolved</div>
-    <div class="stat-value" id="countResolved">0</div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-label">In Progress</div>
-    <div class="stat-value" id="countProgress">0</div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-label">Pending</div>
-    <div class="stat-value" id="countPending">0</div>
-  </div>
-</div>
-</div>
-
-<!-- STATUS LIST (folded in from status.html) -->
-<div class="content-section">
-<span class="section-label">Your Reports</span>
-<div id="statusContent">
-    <div class="loading-spinner">Loading reports...</div>
-</div>
-</div>
-
-<!-- OPTIONS-->
-<div class="content-section">
-<div class="option-list">
-
-  <div class="option-item">
-    <div class="option-icon">📄</div>
-    <div class="option-content">
-      <div class="option-title"><a href="history.html">History</a></div>
+        <div class="welcome-avatar" id="welcomeAvatar">CM</div>
     </div>
-  </div>
 
-</div>
+    <button id="Reportb" class="report-button"
+            onclick="window.location.href='dash.html'">
+        <div class="report-button-left">
+            <span class="plus-icon">+</span>
+            <span>Report Broken Infrastructure</span>
+        </div>
+
+        <div class="take-photo">
+            <span>Take Photo</span>
+            <span class="arrow">→</span>
+        </div>
+    </button>
 </div>
 
+<!-- ACTIVITY SUMMARY -->
+<div class="content-section">
+    <div class="activity-header">
+        <span class="activity-title">📈 Your Activity Summary</span>
+        <span class="activity-scope">All-time</span>
+    </div>
+
+    <div class="activity-grid">
+        <div class="activity-card activity-card--total">
+            <div class="activity-value" id="countTotal">0</div>
+            <div class="activity-label">TOTAL</div>
+        </div>
+
+        <div class="activity-card activity-card--pending">
+            <div class="activity-value" id="countPending">0</div>
+            <div class="activity-label">PENDING</div>
+        </div>
+
+        <div class="activity-card activity-card--progress">
+            <div class="activity-value" id="countProgress">0</div>
+            <div class="activity-label">IN PROGRESS</div>
+        </div>
+
+        <div class="activity-card activity-card--resolved">
+            <div class="activity-value" id="countResolved">0</div>
+            <div class="activity-label">RESOLVED</div>
+        </div>
+    </div>
 </div>
+
+<!-- SUBMITTED REPORTS -->
+<div class="content-section">
+    <div class="section-header-row">
+        <span class="section-label" style="margin:0;">Your Submitted Reports</span>
+        <a href="report.html" class="view-all-link">View All (<span id="viewAllCount">0</span>) ›</a>
+    </div>
+
+    <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="reportSearch" placeholder="Search by description, street, or category…" oninput="filterReports()">
+    </div>
+
+    <div id="statusContent">
+        <div class="loading-spinner">Loading reports...</div>
+    </div>
+</div>
+
 
 <!-- BOTTOM NAV -->
 <div id="bottom-tab">
-    <a href="home.html">🏠<br>HOME</a>
-    <a href="report.html">📄<br>REPORTS</a>
-    <a href="profile.html">👤<br>PROFILE</a>
+    <a href="home.html" class="nav-item">🏠<br>HOME</a>
+    <a href="report.html" class="nav-item">
+        📄<br>REPORTS
+        <span class="nav-badge" id="reportsBadge" style="display:none;"></span>
+    </a>
+    <a href="dash.html" class="nav-item nav-fab">
+        <span class="nav-fab-circle">+</span>
+        <span class="nav-fab-label">Report</span>
+    </a>
+    <a href="history.html" class="nav-item">🕘<br>HISTORY</a>
+    <a href="profile.html" class="nav-item">👤<br>PROFILE</a>
 </div>
 
 <script src="script.js"></script>
 <script>
     const API_BASE = "http://localhost:3000";
 
+    let allReports = [];
+
     // Maps the real status values written by the municipal dashboard
     // (Received, Under Review, Assigned, Resolved) into the three
-    // display buckets shown here. Update this in one place if the
-    // municipal side's status list ever changes.
+    // display buckets shown in the summary cards. Update this in one
+    // place if the municipal side's status list ever changes.
     function classifyStatus(status) {
         const s = (status || '').toLowerCase().trim();
         if (s === 'resolved') return 'resolved';
@@ -201,16 +203,15 @@
         return 'pending'; // covers "Received" and any unrecognized value
     }
 
-    function getStatusIcon(status) {
-        const bucket = classifyStatus(status);
-        if (bucket === 'resolved') return '✅';
-        if (bucket === 'progress') return '🔧';
-        return '📋';
-    }
-
-    function getStatusClass(status) {
-        const bucket = classifyStatus(status);
-        return 'dot-' + bucket;
+    // Visual style for the status pill on each report row — kept
+    // separate from classifyStatus so "Assigned" and "Under Review"
+    // can look different even though they share the "progress" bucket.
+    function getStatusStyle(status) {
+        const s = (status || '').toLowerCase().trim();
+        if (s === 'resolved') return { bg: '#d1fae5', color: '#047857', icon: '✅', label: 'Resolved' };
+        if (s === 'assigned') return { bg: '#ede9fe', color: '#7c3aed', icon: '🧑‍🔧', label: 'Assigned' };
+        if (s === 'under review') return { bg: '#dbeafe', color: '#1d4ed8', icon: '🔍', label: 'Under Review' };
+        return { bg: '#fef3c7', color: '#b45309', icon: '📋', label: status || 'Received' };
     }
 
     function formatDate(dateStr) {
@@ -227,9 +228,115 @@
         return div.innerHTML;
     }
 
+    function ticketNumber(r, index) {
+        if (r.ticket_no) return r.ticket_no;
+        const year = r.date ? new Date(r.date).getFullYear() : new Date().getFullYear();
+        const seq = String(r.id != null ? r.id : index + 1).padStart(4, '0');
+        return `CIRIS-${year}-${seq}`;
+    }
+
+    function renderReportRow(r, index) {
+        const style = getStatusStyle(r.status);
+        const ticket = escapeHtml(ticketNumber(r, index));
+        const category = escapeHtml(r.category || r.description || 'Report');
+
+        return `
+            <div class="report-item" data-search="${ticket.toLowerCase()} ${(r.location || '').toLowerCase()} ${(r.category || '').toLowerCase()}">
+                ${r.image
+                    ? `<img class="thumb" src="${r.image}">`
+                    : `<div class="report-icon" style="background:${style.bg};">${style.icon}</div>`
+                }
+                <div class="report-content">
+                    <div class="report-ticket">${ticket}</div>
+                    <div class="report-title">${category}</div>
+                    <div class="report-meta">${escapeHtml((r.category || '').toLowerCase() || '')}</div>
+                </div>
+                <div class="status-pill" style="background:${style.bg}; color:${style.color};">
+                    ${style.icon} ${escapeHtml(style.label)}
+                </div>
+                <div class="report-chevron">›</div>
+            </div>
+        `;
+    }
+
+    function renderReportList(list) {
+        const container = document.getElementById('statusContent');
+
+        if (list.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
+                    No reports found.<br>Submit a report to get started.
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = list.map((r, i) => renderReportRow(r, i)).join('');
+    }
+
+    function filterReports() {
+        const q = document.getElementById('reportSearch').value.trim().toLowerCase();
+        if (!q) {
+            renderReportList(allReports);
+            return;
+        }
+        const filtered = allReports.filter(r => {
+            const ticket = ticketNumber(r, allReports.indexOf(r)).toLowerCase();
+            const location = (r.location || '').toLowerCase();
+            const category = (r.category || '').toLowerCase();
+            return ticket.includes(q) || location.includes(q) || category.includes(q);
+        });
+        renderReportList(filtered);
+    }
+
+    // Fills the bell badge in the header with the citizen's own
+    // unread notification count (e.g. "the municipality replied to
+    // your feedback"). Mirrors the municipal side's bell badge.
+    async function loadCitizenNotificationBadge() {
+        const badge = document.getElementById('citizenBellBadge');
+        if (!badge) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/my-notifications/unread-count`, {
+                headers: authHeaders()
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+
+            if (data.count > 0) {
+                badge.textContent = data.count > 9 ? '9+' : data.count;
+                badge.classList.add('show');
+            } else {
+                badge.classList.remove('show');
+            }
+        } catch (err) {
+            console.error('Could not load notification count:', err);
+        }
+    }
+
     async function loadDashboard() {
         const user = getCurrentUser();
         const container = document.getElementById('statusContent');
+
+        // Welcome hero
+        const welcomeName = document.getElementById('welcomeName');
+        const welcomeAvatar = document.getElementById('welcomeAvatar');
+
+        if (welcomeName) {
+            welcomeName.textContent = user.first_name || 'Community Member';
+        }
+
+        if (welcomeAvatar) {
+            const first = user.first_name
+                ? user.first_name.charAt(0).toUpperCase()
+                : '';
+            const last = user.last_name
+                ? user.last_name.charAt(0).toUpperCase()
+                : '';
+
+            welcomeAvatar.textContent = (first + last) || 'CM';
+        }
 
         if (!user) {
             localStorage.removeItem('user_session');
@@ -253,6 +360,8 @@
             });
 
             if (res.status === 401) {
+                localStorage.removeItem('user_session');
+                sessionStorage.removeItem('user_session');
                 window.location.href = 'login.html';
                 return;
             }
@@ -263,7 +372,9 @@
                 throw new Error('Invalid data format');
             }
 
-            // Counts for the top stat cards
+            allReports = reports;
+
+            // Counts for the summary cards
             let pending = 0, progress = 0, resolved = 0;
             reports.forEach(r => {
                 const bucket = classifyStatus(r.status);
@@ -276,53 +387,12 @@
             document.getElementById('countPending').textContent = pending;
             document.getElementById('countProgress').textContent = progress;
             document.getElementById('countResolved').textContent = resolved;
+            document.getElementById('viewAllCount').textContent = reports.length;
 
-            if (reports.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
-                        No reports found.<br>Submit a report to get started.
-                    </div>
-                `;
-                return;
-            }
+            const badge = document.getElementById('reportsBadge');
+            if (badge) badge.style.display = pending > 0 ? 'block' : 'none';
 
-            // Grouped report lists
-            const pendingList = reports.filter(r => classifyStatus(r.status) === 'pending');
-            const progressList = reports.filter(r => classifyStatus(r.status) === 'progress');
-            const resolvedList = reports.filter(r => classifyStatus(r.status) === 'resolved');
-
-            function renderGroup(title, dotClass, iconBg, list) {
-                if (list.length === 0) return '';
-                return `
-                    <div class="status-section">
-                        <div class="status-section-title">
-                            <span class="status-dot ${dotClass}"></span> ${title}
-                        </div>
-                        ${list.map(r => `
-                            <div class="report-item">
-                                ${r.image
-                                    ? `<img class="thumb" src="${r.image}">`
-                                    : `<div class="report-icon" style="background:${iconBg};">${getStatusIcon(r.status)}</div>`
-                                }
-                                <div class="report-content">
-                                    <div class="report-title">${escapeHtml(r.description) || 'No description'}</div>
-                                    <div class="report-meta">
-                                        <span class="status-dot ${getStatusClass(r.status)}"></span>
-                                        ${escapeHtml(r.status) || title} · ${formatDate(r.date)}
-                                        ${r.location ? '· 📍 ' + escapeHtml(r.location) : ''}
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
-
-            container.innerHTML =
-                renderGroup('Pending Review', 'dot-pending', '#fef3c7', pendingList) +
-                renderGroup('In Progress', 'dot-progress', '#dbeafe', progressList) +
-                renderGroup('Resolved', 'dot-resolved', '#d1fae5', resolvedList);
+            renderReportList(reports);
 
         } catch (err) {
             console.error(err);
@@ -332,6 +402,8 @@
                 </div>
             `;
         }
+
+        loadCitizenNotificationBadge();
     }
 
     window.addEventListener('load', loadDashboard);
