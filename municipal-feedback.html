@@ -87,7 +87,7 @@
   }
   .logout-btn:hover { background: rgba(248,113,113,0.08); }
 
-  main { flex: 1; padding: 28px 32px; max-width: 760px; }
+  main { flex: 1; padding: 28px 32px; max-width: 800px; }
   header.topbar {
     display: flex;
     justify-content: space-between;
@@ -139,6 +139,104 @@
     margin-left: 8px;
   }
 
+  .feedback-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .reply-toggle {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+  .reply-toggle:hover { text-decoration: underline; }
+
+  .reply-form {
+    margin-top: 12px;
+    background: #eef4fc;
+    border: 1px solid #cfe1f7;
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .reply-form-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e3c72;
+    margin-bottom: 8px;
+  }
+  .reply-form textarea {
+    width: 100%;
+    min-height: 70px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    background: #fff;
+  }
+  .reply-form textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .reply-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .cancel-btn, .send-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .cancel-btn {
+    background: #e2e8f0;
+    color: #475569;
+  }
+  .cancel-btn:hover { background: #d8dfe8; }
+  .send-btn {
+    background: var(--accent);
+    color: #fff;
+  }
+  .send-btn:hover { background: #2568b5; }
+  .send-btn:disabled { opacity: 0.6; cursor: default; }
+
+  .reply-block {
+    margin-top: 12px;
+    background: #f8fafc;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+  }
+  .reply-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .reply-text {
+    font-size: 13.5px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .reply-date {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
   .empty-state {
     text-align: center;
     padding: 48px 16px;
@@ -155,8 +253,7 @@
     <a href="municipal-dashboard.html">Dashboard</a>
     <a href="municipal-reports.html">Reports</a>
     <a href="municipal-feedback.html" class="active">Feedback</a>
-    <a href="#">Analytics</a>
-    <a href="#">Settings</a>
+    <a href="municipal-analytics.html">Analytics</a>
   </nav>
   <div class="sidebar-bottom">
     <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
@@ -176,6 +273,9 @@
 
 <script src="municipal.js"></script>
 <script>
+    let feedbackItems = [];
+    let openReplyIds = new Set();
+
     function formatDateTime(dateStr) {
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return 'Unknown date';
@@ -183,6 +283,113 @@
             day: 'numeric', month: 'short', year: 'numeric',
             hour: '2-digit', minute: '2-digit'
         });
+    }
+
+    function renderFeedback() {
+        const container = document.getElementById('feedbackContainer');
+
+        if (feedbackItems.length === 0) {
+            container.innerHTML = `<div class="empty-state">No feedback yet.</div>`;
+            return;
+        }
+
+        container.innerHTML = feedbackItems.map(f => {
+            const hasReply = !!f.reply_message;
+            const isOpen = openReplyIds.has(f.id);
+            const replierName = f.replied_by_first_name
+                ? `${f.replied_by_first_name} ${f.replied_by_last_name || ''}`.trim()
+                : 'Municipal staff';
+
+            return `
+                <div class="feedback-item ${f.is_read ? '' : 'unread'}">
+                    <div class="feedback-top">
+                        <span class="feedback-from">
+                            ${escapeHtml(f.first_name)} ${escapeHtml(f.last_name)}
+                            ${f.is_read ? '' : '<span class="unread-tag">New</span>'}
+                        </span>
+                        <span class="feedback-date">${formatDateTime(f.date)}</span>
+                    </div>
+                    <div class="feedback-message">${escapeHtml(f.message)}</div>
+
+                    ${hasReply ? `
+                        <div class="reply-block">
+                            <div class="reply-label">↩ Official response from ${escapeHtml(replierName)}</div>
+                            <div class="reply-text">${escapeHtml(f.reply_message)}</div>
+                            <div class="reply-date">Sent ${formatDateTime(f.reply_date)}</div>
+                        </div>
+                    ` : `
+                        <div class="feedback-footer">
+                            <span></span>
+                            <button class="reply-toggle" onclick="toggleReply(${f.id})">↩ Reply to Citizen</button>
+                        </div>
+                        ${isOpen ? `
+                            <div class="reply-form">
+                                <div class="reply-form-label">Official Municipal Response to ${escapeHtml(f.first_name)}:</div>
+                                <textarea id="replyInput-${f.id}" placeholder="Type official acknowledgment or follow-up note..."></textarea>
+                                <div class="reply-form-actions">
+                                    <button class="cancel-btn" onclick="cancelReply(${f.id})">Cancel</button>
+                                    <button class="send-btn" id="sendBtn-${f.id}" onclick="sendReply(${f.id})">📤 Send</button>
+                                </div>
+                            </div>
+                        ` : ''}
+                    `}
+                </div>
+            `;
+        }).join('');
+    }
+
+    function toggleReply(id) {
+        if (openReplyIds.has(id)) {
+            openReplyIds.delete(id);
+        } else {
+            openReplyIds.add(id);
+        }
+        renderFeedback();
+        if (openReplyIds.has(id)) {
+            const el = document.getElementById(`replyInput-${id}`);
+            if (el) el.focus();
+        }
+    }
+
+    function cancelReply(id) {
+        openReplyIds.delete(id);
+        renderFeedback();
+    }
+
+    async function sendReply(id) {
+        const textarea = document.getElementById(`replyInput-${id}`);
+        const reply = textarea ? textarea.value.trim() : '';
+
+        if (!reply) {
+            alert('Please write a reply before sending.');
+            return;
+        }
+
+        const btn = document.getElementById(`sendBtn-${id}`);
+        if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+
+        try {
+            const res = await fetch(`${API_BASE}/feedback/${id}/reply`, {
+                method: 'PATCH',
+                headers: authHeaders(),
+                body: JSON.stringify({ reply })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.message || 'Could not send reply.');
+                if (btn) { btn.disabled = false; btn.textContent = '📤 Send'; }
+                return;
+            }
+
+            openReplyIds.delete(id);
+            loadFeedback();
+
+        } catch (err) {
+            console.error(err);
+            alert('Could not connect to server.');
+            if (btn) { btn.disabled = false; btn.textContent = '📤 Send'; }
+        }
     }
 
     async function loadFeedback() {
@@ -200,29 +407,13 @@
             if (!res.ok) throw new Error('Failed to load');
 
             const items = await res.json();
-
-            if (!Array.isArray(items) || items.length === 0) {
-                container.innerHTML = `<div class="empty-state">No feedback yet.</div>`;
-                return;
-            }
-
-            container.innerHTML = items.map(f => `
-                <div class="feedback-item ${f.is_read ? '' : 'unread'}">
-                    <div class="feedback-top">
-                        <span class="feedback-from">
-                            ${escapeHtml(f.first_name)} ${escapeHtml(f.last_name)}
-                            ${f.is_read ? '' : '<span class="unread-tag">New</span>'}
-                        </span>
-                        <span class="feedback-date">${formatDateTime(f.date)}</span>
-                    </div>
-                    <div class="feedback-message">${escapeHtml(f.message)}</div>
-                </div>
-            `).join('');
+            feedbackItems = Array.isArray(items) ? items : [];
+            renderFeedback();
 
             // Mark all unread messages as read now that the worker has
             // opened the inbox — matches the "view = read" convention
             // most notification lists use.
-            const unreadIds = items.filter(f => !f.is_read).map(f => f.id);
+            const unreadIds = feedbackItems.filter(f => !f.is_read).map(f => f.id);
             for (const id of unreadIds) {
                 fetch(`${API_BASE}/feedback/${id}/read`, {
                     method: 'PATCH',
