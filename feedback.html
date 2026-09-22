@@ -67,6 +67,68 @@
             color: #94a3b8;
             font-size: 14px;
         }
+
+        /* Municipality's reply, shown under the citizen's own message */
+        .reply-block {
+            margin-top: 10px;
+            background: #eef4fc;
+            border-left: 3px solid #1a3a6d;
+            border-radius: 0 8px 8px 0;
+            padding: 10px 12px;
+        }
+        .reply-label {
+            font-size: 11.5px;
+            font-weight: 700;
+            color: #1a3a6d;
+            margin-bottom: 4px;
+        }
+        .reply-text {
+            font-size: 13.5px;
+            color: #0f172a;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .reply-date {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 6px;
+        }
+        .awaiting-reply {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        /* Bell icon added to the header, next to the profile avatar */
+        .header-icons {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .bell-btn {
+            position: relative;
+            text-decoration: none;
+            color: inherit;
+            font-size: 18px;
+            line-height: 1;
+        }
+        .bell-badge {
+            position: absolute;
+            top: -5px;
+            right: -7px;
+            background: #ef4444;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 999px;
+            min-width: 16px;
+            text-align: center;
+            line-height: 1.4;
+            display: none;
+        }
+        .bell-badge.show { display: inline-block; }
     </style>
 </head>
 <body>
@@ -75,7 +137,12 @@
     <div class="header">
         <a href="home.html" id="Menu">←</a>
         <div>Feedback</div>
-        <div onclick="openSidebar()">👤</div>
+        <div class="header-icons">
+            <a href="notifications.html" class="bell-btn" aria-label="Notifications">
+                🔔<span class="bell-badge" id="citizenBellBadge"></span>
+            </a>
+            <div onclick="openSidebar()">👤</div>
+        </div>
     </div>
 
     <!-- Sidebar -->
@@ -93,6 +160,7 @@
         <div class="sidebar-nav">
             <p onclick="goToProfile()">👤 Profile</p>
             <p onclick="window.location.href='feedback.html'">💬 Feedback</p>
+            <p onclick="window.location.href='notifications.html'">🔔 Notifications</p>
         </div>
 
         <div class="sidebar-footer">
@@ -123,12 +191,20 @@
 
     </div>
 
-    <!-- BOTTOM TABS -->
-    <div id="bottom-tab">
-        <a href="home.html">🏠<br>HOME</a>
-        <a href="report.html">📄<br>REPORTS</a>
-        <a href="profile.html">👤<br>PROFILE</a>
-    </div>
+    <!-- BOTTOM NAV -->
+<div id="bottom-tab">
+    <a href="home.html" class="nav-item">🏠<br>HOME</a>
+    <a href="report.html" class="nav-item">
+        📄<br>REPORTS
+        <span class="nav-badge" id="reportsBadge" style="display:none;"></span>
+    </a>
+    <a href="dash.html" class="nav-item nav-fab">
+        <span class="nav-fab-circle">+</span>
+        <span class="nav-fab-label">Report</span>
+    </a>
+    <a href="history.html" class="nav-item">🕘<br>HISTORY</a>
+    <a href="profile.html" class="nav-item">👤<br>PROFILE</a>
+</div>
 
     <script src="script.js"></script>
     <script>
@@ -233,12 +309,45 @@
                     <div class="feedback-item">
                         <div class="feedback-date">${formatDate(f.date)}</div>
                         <div class="feedback-message">${escapeHtml(f.message)}</div>
+                        ${f.reply_message ? `
+                            <div class="reply-block">
+                                <div class="reply-label">↩ Reply from the municipality</div>
+                                <div class="reply-text">${escapeHtml(f.reply_message)}</div>
+                                <div class="reply-date">${formatDate(f.reply_date)}</div>
+                            </div>
+                        ` : `
+                            <div class="awaiting-reply">Awaiting a response from the municipality</div>
+                        `}
                     </div>
                 `).join('');
 
             } catch (err) {
                 console.error(err);
                 container.innerHTML = `<div class="empty-state">Could not load your feedback history.</div>`;
+            }
+        }
+
+        // Fills the bell badge with the citizen's own unread
+        // notification count (e.g. a new reply to their feedback).
+        async function loadCitizenNotificationBadge() {
+            const badge = document.getElementById('citizenBellBadge');
+            if (!badge) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/my-notifications/unread-count`, {
+                    headers: authHeaders()
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+
+                if (data.count > 0) {
+                    badge.textContent = data.count > 9 ? '9+' : data.count;
+                    badge.classList.add('show');
+                } else {
+                    badge.classList.remove('show');
+                }
+            } catch (err) {
+                console.error('Could not load notification count:', err);
             }
         }
 
@@ -259,6 +368,7 @@
             updateSidebarAvatar(user);
 
             loadFeedbackHistory();
+            loadCitizenNotificationBadge();
         });
     </script>
 </body>
