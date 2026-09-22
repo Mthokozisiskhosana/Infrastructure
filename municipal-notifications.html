@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Notifications</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar (same as other municipal pages) */
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+  nav a.nav-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+
+  /* Main */
+  main { flex: 1; padding: 28px 32px; max-width: 780px; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  header.topbar h1 {
+    font-size: 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .mark-all-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+  .mark-all-btn:hover { background: #eef4fc; }
+  .mark-all-btn:disabled { opacity: 0.4; cursor: default; background: none; }
+
+  .topbar-sub {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 18px;
+  }
+
+  /* Notification list */
+  .notif-list {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .notif-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item:hover { background: #f8fafc; }
+  .notif-item.unread { background: #f5f9ff; }
+
+  .notif-icon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .notif-icon.feedback { background: #ede9fe; color: #7c3aed; }
+
+  .notif-body { flex: 1; min-width: 0; }
+
+  .notif-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .notif-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .notif-date {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .notif-message {
+    font-size: 13px;
+    color: #475569;
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+  .notif-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .notif-link:hover { text-decoration: underline; }
+
+  .notif-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+  .notif-item:not(.unread) .notif-dot { visibility: hidden; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html">Dashboard</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
+    <a href="municipal-analytics.html">Analytics</a>
+   
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <h1> Notifications</h1>
+    <span class="worker-badge" id="workerName">Loading worker...</span>
+  </header>
+
+  <div class="topbar-sub">
+    <button class="mark-all-btn" id="markAllBtn" onclick="markAllRead()">✓✓ Mark all read</button>
+  </div>
+
+  <div class="notif-list" id="notifList">
+    <div class="empty-state">Loading notifications...</div>
+  </div>
+</main>
+
+<script src="municipal.js"></script>
+<script>
+    let notifications = [];
+
+    function formatDateTime(dateStr) {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Unknown date';
+        return d.toLocaleString('en-ZA', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    // Maps a notification's type to how it looks and where it links.
+    // "report" -> a new community report came in.
+    // "feedback" -> a new community feedback message came in.
+    function notifPresentation(n) {
+        if (n.type === 'feedback') {
+            return {
+                icon: '💬',
+                iconClass: 'feedback',
+                linkText: 'View Feedback ↗',
+                url: 'municipal-feedback.html'
+            };
+        }
+        // default: report
+        return {
+            icon: '📄',
+            iconClass: '',
+            linkText: 'View Report ↗',
+            url: `municipal-report.html?id=${n.related_id}`
+        };
+    }
+
+    function renderNotifications() {
+        const container = document.getElementById('notifList');
+
+        if (notifications.length === 0) {
+            container.innerHTML = `<div class="empty-state">You're all caught up — no notifications yet.</div>`;
+            updateMarkAllState();
+            return;
+        }
+
+        container.innerHTML = notifications.map(n => {
+            const p = notifPresentation(n);
+            return `
+                <div class="notif-item ${n.is_read ? '' : 'unread'}" onclick="openNotification(${n.id}, '${p.url}')">
+                    <div class="notif-dot"></div>
+                    <div class="notif-icon ${p.iconClass}">${p.icon}</div>
+                    <div class="notif-body">
+                        <div class="notif-top">
+                            <span class="notif-title">${escapeHtml(n.title)}</span>
+                            <span class="notif-date">${formatDateTime(n.date)}</span>
+                        </div>
+                        <div class="notif-message">${escapeHtml(n.message)}</div>
+                        <a href="${p.url}" class="notif-link" onclick="event.stopPropagation();">${p.linkText}</a>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        updateMarkAllState();
+    }
+
+    function updateMarkAllState() {
+        const btn = document.getElementById('markAllBtn');
+        if (!btn) return;
+        const hasUnread = notifications.some(n => !n.is_read);
+        btn.disabled = !hasUnread;
+    }
+
+    async function loadNotifications() {
+        const container = document.getElementById('notifList');
+        try {
+            const res = await fetch(`${API_BASE}/notifications`, {
+                headers: authHeaders()
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            if (!res.ok) throw new Error('Failed to load');
+
+            const items = await res.json();
+            notifications = Array.isArray(items) ? items : [];
+            renderNotifications();
+
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `<div class="empty-state">Could not load notifications. Is the server running?</div>`;
+        }
+    }
+
+    // Clicking a notification marks it read, then takes the worker
+    // straight to the report or feedback it refers to.
+    async function openNotification(id, url) {
+        const n = notifications.find(x => x.id === id);
+        if (n && !n.is_read) {
+            n.is_read = true;
+            try {
+                await fetch(`${API_BASE}/notifications/${id}/read`, {
+                    method: 'PATCH',
+                    headers: authHeaders()
+                });
+                loadUnreadBadge();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        window.location.href = url;
+    }
+
+    async function markAllRead() {
+        const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+        if (unreadIds.length === 0) return;
+
+        notifications.forEach(n => n.is_read = true);
+        renderNotifications();
+
+        try {
+            await fetch(`${API_BASE}/notifications/mark-all-read`, {
+                method: 'PATCH',
+                headers: authHeaders()
+            });
+        } catch (err) {
+            console.error(err);
+        }
+        loadUnreadBadge();
+    }
+
+    window.addEventListener('load', () => {
+        if (!enforceWorkerAccess()) return;
+
+        const worker = getWorkerSession();
+        const badge = document.getElementById('workerName');
+        if (badge) badge.textContent = worker.first_name || worker.email || 'Worker';
+
+        loadNotifications();
+    });
+</script>
+</body>
+</html>
