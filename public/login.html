@@ -451,6 +451,7 @@
     </div>
 
    <script src="api-config.js"></script>
+   <script src="login-lock.js"></script>
    <script src="password-rules.js"></script>
    <script>
 // ============================================
@@ -501,11 +502,27 @@ bindPasswordStrengthUI('registerPassword', 'strengthBar', 'registerRuleList', 'r
 // ============================================
 // LOGIN (REAL DATABASE)
 // ============================================
+// Countdown shown while the server has paused sign-in after 5 wrong passwords
+const loginLock = createLoginLock({
+    storageKey: 'ciris_login_lock_until',
+    button: document.getElementById('loginBtn'),
+    idleLabel: 'Sign In',
+    showMessage: text => {
+        const error = document.getElementById('loginError');
+        error.textContent = text;
+        error.className = 'alert alert-error show';
+    },
+    clearMessage: () => document.getElementById('loginError').classList.remove('show')
+});
+loginLock.resume();
+
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
 
     const btn = document.getElementById('loginBtn');
     const error = document.getElementById('loginError');
+
+    if (loginLock.isLocked()) return;
 
     const email = loginEmail.value.trim();
     const password = loginPassword.value;
@@ -552,6 +569,8 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
                 window.location.replace("home.html");
             }, 1000);
 
+        } else if (res.status === 429 && data.retry_after) {
+            loginLock.start(data.retry_after);
         } else {
             throw new Error(data.message || "Login failed");
         }

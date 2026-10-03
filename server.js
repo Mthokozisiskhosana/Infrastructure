@@ -9,6 +9,15 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const { validatePasswordStrength } = require("./passwordPolicy");
 const {
+    createLoginSecurity,
+    loginLockSeconds,
+    formatDuration,
+    LOGIN_MAX_FAILURES,
+    IP_MAX_FAILURES,
+    IP_LOCK_SECONDS,
+    CODE_MAX_FAILURES
+} = require("./loginSecurity");
+const {
     UPLOADS_DIR,
     USE_SUPABASE,
     ensureStorageReady,
@@ -21,6 +30,13 @@ const {
 } = require("./imageStorage");
 
 const app = express();
+
+// On Render, requests arrive through Render's proxy — trust it so req.ip is
+// the visitor's real address (used for per-address login limits). Not
+// enabled locally, where the header could simply be faked.
+if (process.env.RENDER || process.env.TRUST_PROXY === "true") {
+    app.set("trust proxy", 1);
+}
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -55,6 +71,7 @@ app.get("/api/health", (req, res) => {
 
 const SALT_ROUNDS = 12;
 const RESET_CODE_TTL_MINUTES = 10;
+const RESEND_COOLDOWN_SECONDS = 30;
 
 // ======================================
 // JWT CONFIG
@@ -130,10 +147,13 @@ const pool = process.env.DATABASE_URL
         idleTimeoutMillis: 30000
     });
 
+const loginSecurity = createLoginSecurity(pool);
+
 pool.connect()
     .then(client => {
         console.log("✅ Connected to PostgreSQL");
         client.release();
+        return loginSecurity.ensureTable().then(() => loginSecurity.startCleanup());
     })
     .catch(err => {
         console.log("❌ DB Connection Failed:", err.message);
@@ -279,6 +299,37 @@ app.post("/register", async (req, res) => {
 // ======================================
 // LOGIN API
 // ======================================
+// Compared against when the email doesn't exist, so a wrong email takes as
+// long as a wrong password — response time can't reveal who is registered.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("ciris-timing-placeholder", SALT_ROUNDS);
+
+function lockedResponse(seconds) {
+    return {
+        message: `Too many failed login attempts. Please wait ${formatDuration(seconds)} before trying again.`,
+        locked: true,
+        retry_after: seconds
+    };
+}
+
+async function sendLockoutAlert(email) {
+    const timeStr = new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' });
+    await sendSecurityEmail(
+        email,
+        "Security Alert: Several failed login attempts",
+        `
+        <div style="font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;">
+            <h2 style="color:#1e3c72;">Failed login attempts</h2>
+            <p>Someone entered the wrong password for your CIRIS account ${LOGIN_MAX_FAILURES} times, so sign-in was paused for a short while.</p>
+            <p><strong>Time:</strong> ${timeStr}</p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;">
+            <p style="font-size:13px;color:#64748b;">
+                If this was you, you can try again shortly. If it wasn't, we recommend resetting your password.
+            </p>
+        </div>
+        `
+    );
+}
+
 app.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
@@ -286,7 +337,16 @@ app.post("/login", async (req, res) => {
         return res.status(400).json({ message: "Email and password are required" });
     }
 
+    const accountKey = `login:${String(email).trim().toLowerCase()}`;
+    const ipKey = `ip:${req.ip}`;
+
     try {
+        // 1. Refuse while the account or this address is locked
+        const lockedFor = await loginSecurity.getLockSeconds([accountKey, ipKey]);
+        if (lockedFor > 0) {
+            return res.status(429).json(lockedResponse(lockedFor));
+        }
+
         const result = await pool.query(
             `SELECT id, first_name, last_name, email, phone, password, role, must_change_password
              FROM Users
@@ -294,16 +354,44 @@ app.post("/login", async (req, res) => {
             [email]
         );
 
-        if (result.rows.length === 0) {
-            return res.status(401).json({ message: "Invalid email or password" });
-        }
-
         const user = result.rows[0];
-        const match = await bcrypt.compare(password, user.password);
+        const match = await bcrypt.compare(password, user ? user.password : DUMMY_PASSWORD_HASH);
 
-        if (!match) {
-            return res.status(401).json({ message: "Invalid email or password" });
+        // 2. Wrong email or password: count it (unknown emails are counted the
+        //    same way, so lockouts don't reveal which emails are registered)
+        if (!user || !match) {
+            const ipResult = await loginSecurity.recordFailure(ipKey, {
+                limit: IP_MAX_FAILURES,
+                lockFor: () => IP_LOCK_SECONDS
+            });
+            const accountResult = await loginSecurity.recordFailure(accountKey, {
+                limit: LOGIN_MAX_FAILURES,
+                lockFor: loginLockSeconds
+            });
+
+            if (accountResult.lockedFor) {
+                // Email the owner on the first lockout only, so an attacker
+                // can't flood their inbox by triggering lock after lock.
+                if (user && accountResult.lockouts === 1) {
+                    sendLockoutAlert(user.email);
+                }
+                return res.status(429).json(lockedResponse(accountResult.lockedFor));
+            }
+            if (ipResult.lockedFor) {
+                return res.status(429).json(lockedResponse(ipResult.lockedFor));
+            }
+
+            const left = accountResult.attemptsLeft;
+            return res.status(401).json({
+                message: left <= 3
+                    ? `Invalid email or password. ${left} attempt${left === 1 ? "" : "s"} left before sign-in is paused.`
+                    : "Invalid email or password",
+                attempts_left: left
+            });
         }
+
+        // 3. Success: forget this account's failures
+        await loginSecurity.clear(accountKey);
 
         const token = generateToken(user);
 
@@ -337,13 +425,28 @@ app.post("/forgot-password", async (req, res) => {
 
     try {
         const checkUser = await pool.query(
-            "SELECT id FROM Users WHERE email = $1",
+            "SELECT id, reset_token_expiry FROM Users WHERE email = $1",
             [email]
         );
 
         if (checkUser.rows.length === 0) {
             return res.json(genericResponse);
         }
+
+        // Resend cooldown (matches the 30s countdown on forgortpassword.html):
+        // a code issued less than RESEND_COOLDOWN_SECONDS ago isn't replaced,
+        // so nobody can flood someone's inbox with reset emails. The reply is
+        // the same either way, so it doesn't reveal whether the email exists.
+        const expiry0 = checkUser.rows[0].reset_token_expiry;
+        const issuedSecondsAgo = expiry0
+            ? RESET_CODE_TTL_MINUTES * 60 - (new Date(expiry0) - Date.now()) / 1000
+            : Infinity;
+        if (issuedSecondsAgo < RESEND_COOLDOWN_SECONDS) {
+            return res.json(genericResponse);
+        }
+
+        // A fresh code gets a fresh set of guesses
+        await loginSecurity.clear(resetKey(email));
 
         const code = generateOtp();
         const expiry = new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000);
@@ -366,41 +469,70 @@ app.post("/forgot-password", async (req, res) => {
 });
 
 // ======================================
+// RESET-CODE CHECK (shared by steps 2 and 3)
+// A 6-digit code has only a million combinations, so without a limit it
+// could simply be guessed within its 10 minutes. After CODE_MAX_FAILURES
+// wrong guesses the code is cancelled and a new one must be requested.
+// ======================================
+function resetKey(email) {
+    return `reset:${String(email).trim().toLowerCase()}`;
+}
+
+async function checkResetCode(email, code) {
+    const result = await pool.query(
+        `SELECT id, reset_token, reset_token_expiry
+         FROM Users
+         WHERE email = $1`,
+        [email]
+    );
+    const user = result.rows[0];
+
+    if (!user || !user.reset_token) {
+        return { ok: false, message: "Invalid or expired code. Please request a new one." };
+    }
+
+    const notExpired = user.reset_token_expiry && new Date(user.reset_token_expiry) > new Date();
+    if (!notExpired) {
+        return { ok: false, message: "This code has expired. Please request a new one." };
+    }
+
+    if (user.reset_token !== hashOtp(String(code))) {
+        const attempt = await loginSecurity.recordFailure(resetKey(email), { limit: CODE_MAX_FAILURES });
+        if (attempt.limitReached) {
+            await pool.query(
+                "UPDATE Users SET reset_token = NULL, reset_token_expiry = NULL WHERE id = $1",
+                [user.id]
+            );
+            return { ok: false, message: "Too many incorrect codes. This code has been cancelled — please request a new one." };
+        }
+        const left = attempt.attemptsLeft;
+        return { ok: false, message: `Incorrect code. ${left} attempt${left === 1 ? "" : "s"} left.` };
+    }
+
+    return { ok: true, user };
+}
+
+// ======================================
 // FORGOT PASSWORD — STEP 2
 // ======================================
 app.post("/verify-code", async (req, res) => {
     const { email, code } = req.body;
-    const invalidResponse = { message: "Invalid or expired code." };
 
     if (!email || !code) {
-        return res.status(400).json(invalidResponse);
+        return res.status(400).json({ message: "Invalid or expired code." });
     }
 
     try {
-        const result = await pool.query(
-            `SELECT reset_token, reset_token_expiry
-             FROM Users
-             WHERE email = $1`,
-            [email]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(400).json(invalidResponse);
-        }
-
-        const user = result.rows[0];
-        const validCode = user.reset_token === hashOtp(code);
-        const notExpired = user.reset_token_expiry && new Date(user.reset_token_expiry) > new Date();
-
-        if (!validCode || !notExpired) {
-            return res.status(400).json(invalidResponse);
+        const check = await checkResetCode(email, code);
+        if (!check.ok) {
+            return res.status(400).json({ message: check.message });
         }
 
         res.json({ message: "Code verified" });
 
     } catch (err) {
         console.log(err);
-        res.status(500).json(invalidResponse);
+        res.status(500).json({ message: "Something went wrong. Please try again." });
     }
 });
 
@@ -420,24 +552,11 @@ app.post("/reset-password", async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
-            `SELECT id, reset_token, reset_token_expiry
-             FROM Users
-             WHERE email = $1`,
-            [email]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(400).json({ message: "Invalid or expired code." });
+        const check = await checkResetCode(email, code);
+        if (!check.ok) {
+            return res.status(400).json({ message: check.message });
         }
-
-        const user = result.rows[0];
-        const validCode = user.reset_token === hashOtp(code);
-        const notExpired = user.reset_token_expiry && new Date(user.reset_token_expiry) > new Date();
-
-        if (!validCode || !notExpired) {
-            return res.status(400).json({ message: "Invalid or expired code. Please request a new one." });
-        }
+        const user = check.user;
 
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -447,6 +566,10 @@ app.post("/reset-password", async (req, res) => {
              WHERE id = $2`,
             [passwordHash, user.id]
         );
+
+        // New password: clear the code guesses and any login lock on this account
+        await loginSecurity.clear(resetKey(email));
+        await loginSecurity.clear(`login:${String(email).trim().toLowerCase()}`);
 
         res.json({ message: "Password updated successfully. You can now log in." });
 
@@ -1495,6 +1618,9 @@ app.post("/profile/request-email-change", requireAuth, async (req, res) => {
             return res.status(400).json({ message: "That email is already in use by another account." });
         }
 
+        // A fresh code gets a fresh set of guesses
+        await loginSecurity.clear(`emailchange:${req.user.id}`);
+
         const code = generateOtp();
         const expiry = new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000);
 
@@ -1542,12 +1668,29 @@ app.post("/profile/confirm-email-change", requireAuth, async (req, res) => {
         }
 
         const user = result.rows[0];
-        const validCode = user.pending_email_token === hashOtp(code);
         const notExpired = user.pending_email_token_expiry && new Date(user.pending_email_token_expiry) > new Date();
 
-        if (!user.pending_email || !validCode || !notExpired) {
+        if (!user.pending_email || !user.pending_email_token || !notExpired) {
             return res.status(400).json({ message: "Invalid or expired code. Please request a new one." });
         }
+
+        // Same guess limit as password-reset codes
+        const changeKey = `emailchange:${req.user.id}`;
+        if (user.pending_email_token !== hashOtp(String(code))) {
+            const attempt = await loginSecurity.recordFailure(changeKey, { limit: CODE_MAX_FAILURES });
+            if (attempt.limitReached) {
+                await pool.query(
+                    `UPDATE Users
+                     SET pending_email = NULL, pending_email_token = NULL, pending_email_token_expiry = NULL
+                     WHERE id = $1`,
+                    [req.user.id]
+                );
+                return res.status(400).json({ message: "Too many incorrect codes. This code has been cancelled — please request a new one." });
+            }
+            const left = attempt.attemptsLeft;
+            return res.status(400).json({ message: `Incorrect code. ${left} attempt${left === 1 ? "" : "s"} left.` });
+        }
+        await loginSecurity.clear(changeKey);
 
         const oldEmail = user.email;
         const newEmail = user.pending_email;

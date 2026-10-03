@@ -131,3 +131,16 @@ ALTER TABLE Notifications
     CHECK (type IN ('report', 'feedback', 'feedback_reply', 'report_status'));
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON Notifications(user_id, is_read);
+
+-- ============================================
+-- LOGIN ATTEMPTS (brute-force protection — see loginSecurity.js)
+-- server.js also creates this automatically on startup.
+-- attempt_key: 'login:<email>' | 'ip:<address>' | 'reset:<email>' | 'emailchange:<userId>'
+-- ============================================
+CREATE TABLE IF NOT EXISTS LoginAttempts (
+    attempt_key     VARCHAR(255) PRIMARY KEY,
+    failed_count    INTEGER   NOT NULL DEFAULT 0,
+    lockouts        INTEGER   NOT NULL DEFAULT 0,   -- lockouts in a row (30s, 1m, 5m, 15m)
+    locked_until    TIMESTAMP,
+    last_failed_at  TIMESTAMP
+);
