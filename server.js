@@ -1126,6 +1126,121 @@ function generateTempPassword() {
     return pwd.join("");
 }
 
+function escapeEmailHtml(text) {
+    return String(text ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/** Emails a staff member their login email + temporary password. Returns true if sent. */
+async function sendStaffCredentialsEmail({ to, firstName, tempPassword, subject, intro }) {
+    try {
+        await transporter.sendMail({
+            from: process.env.SMTP_FROM || '"Community Portal" <no-reply@communityportal.local>',
+            to,
+            subject,
+            html: `
+                <div style="font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;">
+                    <p>Hi ${escapeEmailHtml(firstName)},</p>
+                    <p>${intro}</p>
+                    <p><strong>Login email:</strong> ${escapeEmailHtml(to)}<br>
+                    <strong>Temporary password:</strong> <code style="font-size:16px;">${escapeEmailHtml(tempPassword)}</code></p>
+                    <p>Sign in at <a href="${process.env.APP_URL || 'http://localhost:3000'}/municipal-login.html">${process.env.APP_URL || 'http://localhost:3000'}/municipal-login.html</a>.
+                    You'll be asked to choose your own password straight away.</p>
+                    <hr style="border:none;border-top:1px solid #e2e8f0;">
+                    <p style="font-size:13px;color:#64748b;">If you weren't expecting this, contact your supervisor.</p>
+                </div>
+            `
+        });
+        return true;
+    } catch (err) {
+        console.log(`[staff] Could not email login details to ${to}:`, err.message);
+        return false;
+    }
+}
+
+// ======================================
+// STAFF LIST (supervisors)
+// ======================================
+app.get("/admin/staff", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT id, first_name, last_name, email, phone, role, must_change_password
+             FROM Users
+             WHERE role IN ('municipal_worker', 'supervisor')
+             ORDER BY role DESC, first_name, last_name`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ======================================
+// SUPERVISOR RESETS A STAFF MEMBER'S PASSWORD
+// For when a worker can't use "Forgot password" (e.g. the email never
+// arrives). Sets a temporary password, forces them to choose a new one at
+// next sign-in (must_change_password), and clears any login lock.
+// Supervisors can reset municipal workers; resetting a supervisor needs an
+// admin, so one supervisor can't take over another's account. Residents
+// use the self-service "Forgot password" flow only.
+// ======================================
+app.post("/admin/staff/:id/reset-password", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+    const targetId = Number(req.params.id);
+
+    if (targetId === req.user.id) {
+        return res.status(400).json({ message: "To change your own password, use “Forgot password” on the sign-in page." });
+    }
+
+    try {
+        const result = await pool.query(
+            "SELECT id, first_name, last_name, email, role FROM Users WHERE id = $1",
+            [targetId]
+        );
+        const target = result.rows[0];
+
+        if (!target || !["municipal_worker", "supervisor"].includes(target.role)) {
+            return res.status(404).json({ message: "Staff member not found" });
+        }
+        if (target.role === "supervisor" && req.user.role !== "admin") {
+            return res.status(403).json({ message: "Only an administrator can reset a supervisor's password." });
+        }
+
+        const tempPassword = generateTempPassword();
+        const passwordHash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
+
+        await pool.query(
+            `UPDATE Users
+             SET password = $1, must_change_password = true,
+                 reset_token = NULL, reset_token_expiry = NULL
+             WHERE id = $2`,
+            [passwordHash, target.id]
+        );
+        await loginSecurity.clear(`login:${String(target.email).trim().toLowerCase()}`);
+
+        const emailSent = await sendStaffCredentialsEmail({
+            to: target.email,
+            firstName: target.first_name,
+            tempPassword,
+            subject: "Your CIRIS Municipal Portal password has been reset",
+            intro: "Your supervisor has reset your CIRIS Municipal Portal password."
+        });
+
+        console.log(`[staff] User #${req.user.id} reset the password of staff member #${target.id}`);
+
+        res.json({
+            message: emailSent
+                ? `Password reset. ${target.first_name} has been emailed a temporary password.`
+                : `Password reset, but the email could not be sent — give ${target.first_name} the temporary password below.`,
+            temp_password: tempPassword,
+            email_sent: emailSent
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
 app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
     const { first_name, last_name, email, phone, role } = req.body;
 
@@ -1158,21 +1273,25 @@ app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"),
             [first_name, last_name, email, phone, passwordHash, role]
         );
 
-        await transporter.sendMail({
-            from: process.env.SMTP_FROM || '"Community Portal" <no-reply@communityportal.local>',
+        const emailSent = await sendStaffCredentialsEmail({
             to: email,
+            firstName: first_name,
+            tempPassword,
             subject: "Your CIRIS Municipal Portal account has been created",
-            html: `
-                <p>Hi ${first_name},</p>
-                <p>A municipal staff account has been created for you on the CIRIS platform.</p>
-                <p><strong>Login email:</strong> ${email}<br>
-                <strong>Temporary password:</strong> ${tempPassword}</p>
-                <p>Please log in at ${process.env.APP_URL || 'http://localhost:3000'}/municipal-login.html
-                and change your password immediately from your profile settings.</p>
-            `
+            intro: "A municipal staff account has been created for you on the CIRIS platform."
         });
 
-        res.json({ message: "Staff account created and credentials emailed", user: result.rows[0] });
+        // The temporary password is returned once so the supervisor can hand
+        // it over in person if the email doesn't arrive. It is never stored
+        // in plain text and can't be retrieved again.
+        res.json({
+            message: emailSent
+                ? "Staff account created and login details emailed."
+                : "Staff account created, but the email could not be sent — give them the temporary password below.",
+            user: result.rows[0],
+            temp_password: tempPassword,
+            email_sent: emailSent
+        });
 
     } catch (err) {
         console.log(err);

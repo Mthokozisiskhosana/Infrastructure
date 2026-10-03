@@ -205,10 +205,29 @@ async function loadUnreadBadge() {
     }
 }
 
+// Supervisors get a "Staff" item in the sidebar (add staff, reset
+// passwords). Added here so every municipal page gets it without each
+// page's own copy of the sidebar needing to change.
+function addStaffNavLink(worker) {
+    if (!['supervisor', 'admin'].includes(worker.role)) return;
+    const nav = document.querySelector('aside nav');
+    if (!nav || nav.querySelector('a[href="municipal-staff.html"]')) return;
+
+    const link = document.createElement('a');
+    link.href = 'municipal-staff.html';
+    link.textContent = 'Staff';
+    if (window.location.pathname.endsWith('/municipal-staff.html')) {
+        nav.querySelectorAll('a.active').forEach(a => a.classList.remove('active'));
+        link.classList.add('active');
+    }
+    nav.appendChild(link);
+}
+
 window.addEventListener('load', () => {
     if (!enforceWorkerAccess()) return;
 
     const worker = getWorkerSession();
+    addStaffNavLink(worker);
     const badge = document.getElementById('workerName');
     if (badge) {
         badge.textContent = worker.first_name || worker.email || 'Worker';

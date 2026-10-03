@@ -60,6 +60,16 @@
   }
   .password-toggle:hover { color: #475569; }
   .password-toggle svg { width: 19px; height: 19px; }
+  .forgot-link {
+    display: block;
+    margin-top: 14px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .forgot-link:hover { text-decoration: underline; }
+
   button.submit-btn {
     width: 100%;
     padding: 11px;
@@ -103,6 +113,7 @@
   </div>
 
   <button class="submit-btn" id="signInBtn" onclick="workerLogin()">Sign in</button>
+  <a class="forgot-link" href="forgortpassword.html?portal=staff">Forgot password?</a>
 </div>
 
 <script src="api-config.js"></script>

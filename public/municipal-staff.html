@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Staff</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+
+    --received: #b45309;
+    --received-bg: #fef3c7;
+    --resolved: #15803d;
+    --resolved-bg: #dcfce7;
+    --assigned: #7c3aed;
+    --assigned-bg: #ede9fe;
+    --review: #1d4ed8;
+    --review-bg: #dbeafe;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar — same as the other municipal pages */
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+
+  /* Main */
+  main { flex: 1; padding: 28px 32px; min-width: 0; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  header.topbar h1 { font-size: 20px; font-weight: 600; }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .card .hint { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr) auto;
+    gap: 10px;
+    align-items: end;
+  }
+  @media (max-width: 1100px) { .form-grid { grid-template-columns: repeat(2, 1fr); } }
+  .form-grid label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .form-grid input, .form-grid select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 14px;
+    background: var(--card);
+    color: var(--text);
+  }
+
+  .btn {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: var(--navy);
+    color: #fff;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; background: var(--navy); }
+  .btn-outline {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    padding: 7px 12px;
+    font-size: 13px;
+  }
+  .btn-outline:hover { background: var(--review-bg); }
+  .btn-outline:disabled { background: transparent; color: var(--muted); }
+
+  table {
+    width: 100%;
+    background: var(--card);
+    border-radius: 10px;
+    border-collapse: collapse;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  thead { background: #f8fafc; }
+  th, td {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+  tbody tr:last-child td { border-bottom: none; }
+  .you { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 6px; }
+
+  .pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pill-active   { color: var(--resolved); background: var(--resolved-bg); }
+  .pill-pending  { color: var(--received); background: var(--received-bg); }
+  .pill-worker   { color: var(--review); background: var(--review-bg); }
+  .pill-super    { color: var(--assigned); background: var(--assigned-bg); }
+
+  .empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 14px; }
+
+  .toast {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast-error { background: #fef2f2; color: #b91c1c; }
+  html[data-theme="dark"] .toast-error { background: rgba(239,68,68,0.12); color: #fca5a5; }
+
+  /* One-time temporary password panel */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .dialog {
+    background: var(--card);
+    color: var(--text);
+    border-radius: 14px;
+    padding: 24px;
+    max-width: 440px;
+    width: 100%;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  .dialog h3 { font-size: 17px; margin-bottom: 8px; }
+  .dialog p { font-size: 14px; color: var(--muted); line-height: 1.5; margin-bottom: 14px; }
+  .temp-password {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .temp-password code {
+    flex: 1;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    text-align: center;
+    user-select: all;
+  }
+  .dialog .warn { font-size: 12.5px; color: var(--received); margin-bottom: 16px; }
+  .dialog .ok { font-size: 12.5px; color: var(--resolved); margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html">Dashboard</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
+    <a href="municipal-analytics.html">Analytics</a>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <h1>Staff</h1>
+    <span class="worker-badge" id="workerName">Loading...</span>
+  </header>
+
+  <div id="supervisorOnly">
+    <!-- Add staff member -->
+    <div class="card">
+      <h2>Add staff member</h2>
+      <p class="hint">They'll receive a temporary password by email and must choose their own when they first sign in.</p>
+      <div class="form-grid">
+        <div><label for="newFirst">First name</label><input id="newFirst" autocomplete="off"></div>
+        <div><label for="newLast">Last name</label><input id="newLast" autocomplete="off"></div>
+        <div><label for="newEmail">Email</label><input id="newEmail" type="email" autocomplete="off" placeholder="name@municipality.gov.za"></div>
+        <div><label for="newPhone">Phone</label><input id="newPhone" type="tel" autocomplete="off" placeholder="0712345678"></div>
+        <div>
+          <label for="newRole">Role</label>
+          <select id="newRole">
+            <option value="municipal_worker">Municipal worker</option>
+            <option value="supervisor">Supervisor</option>
+          </select>
+        </div>
+        <button class="btn" id="addBtn" onclick="addStaff()">Add staff</button>
+      </div>
+      <div class="toast" id="addToast"></div>
+    </div>
+
+    <!-- Staff list -->
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Password</th>
+        </tr>
+      </thead>
+      <tbody id="staffBody">
+        <tr><td colspan="6" class="empty-state">Loading staff...</td></tr>
+      </tbody>
+    </table>
+    <div class="toast" id="listToast"></div>
+  </div>
+</main>
+
+<!-- Shown once after creating a staff member or resetting a password -->
+<div class="overlay" id="tempOverlay" role="dialog" aria-modal="true" aria-labelledby="tempTitle">
+  <div class="dialog">
+    <h3 id="tempTitle">Temporary password</h3>
+    <p id="tempMessage"></p>
+    <div class="temp-password">
+      <code id="tempPassword"></code>
+      <button class="btn btn-outline" id="copyBtn" onclick="copyTempPassword()">Copy</button>
+    </div>
+    <div id="tempEmailNote"></div>
+    <button class="btn" style="width:100%;" onclick="closeTempPanel()">Done</button>
+  </div>
+</div>
+
+<script src="api-config.js"></script>
+<script src="municipal.js"></script>
+<script>
+    let me = null;
+
+    function roleLabel(role) {
+        return role === 'supervisor'
+            ? '<span class="pill pill-super">Supervisor</span>'
+            : '<span class="pill pill-worker">Municipal worker</span>';
+    }
+
+    // Mirrors the server rule: supervisors reset municipal workers only.
+    function resetBlockedReason(s) {
+        if (s.id === me.id) return 'Use “Forgot password” on the sign-in page to change your own password';
+        if (s.role === 'supervisor' && me.role !== 'admin') return 'Only an administrator can reset a supervisor’s password';
+        return '';
+    }
+
+    async function loadStaff() {
+        const tbody = document.getElementById('staffBody');
+        try {
+            const res = await fetch(`${API_BASE}/admin/staff`, { headers: authHeaders() });
+            if (res.status === 401) { window.location.href = 'municipal-login.html'; return; }
+            const staff = await readJsonSafely(res);
+            if (!res.ok || !Array.isArray(staff)) throw new Error((staff && staff.message) || 'Could not load staff');
+
+            if (staff.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No staff accounts yet.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = staff.map(s => {
+                const blocked = resetBlockedReason(s);
+                return `
+                    <tr>
+                        <td>${escapeHtml(s.first_name)} ${escapeHtml(s.last_name)}${s.id === me.id ? '<span class="you">(you)</span>' : ''}</td>
+                        <td>${escapeHtml(s.email)}</td>
+                        <td>${escapeHtml(s.phone)}</td>
+                        <td>${roleLabel(s.role)}</td>
+                        <td>${s.must_change_password
+                            ? '<span class="pill pill-pending" title="Signs in with a temporary password and must choose a new one">Must set new password</span>'
+                            : '<span class="pill pill-active">Active</span>'}</td>
+                        <td>
+                            <button class="btn btn-outline" ${blocked ? `disabled title="${escapeHtml(blocked)}"` : ''}
+                                    onclick="resetPassword(${Number(s.id)}, this)"
+                                    data-name="${escapeHtml(s.first_name + ' ' + s.last_name)}">
+                                🔑 Reset password
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error(err);
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${escapeHtml(err.message || 'Could not reach the server.')}</td></tr>`;
+        }
+    }
+
+    async function resetPassword(id, btn) {
+        const name = btn.dataset.name;
+        if (!confirm(`Reset the password for ${name}?\n\nTheir current password will stop working. They'll get a temporary password and must choose a new one when they sign in.`)) return;
+
+        const toast = document.getElementById('listToast');
+        toast.classList.remove('show');
+        btn.disabled = true;
+        btn.textContent = 'Resetting...';
+
+        try {
+            const res = await fetch(`${API_BASE}/admin/staff/${id}/reset-password`, { method: 'POST', headers: authHeaders() });
+            const data = await readJsonSafely(res);
+            if (!res.ok || !data) throw new Error((data && data.message) || 'Could not reset the password.');
+
+            showTempPanel(`Password reset for ${name}`, data);
+            loadStaff();
+        } catch (err) {
+            toast.textContent = err.message;
+            toast.className = 'toast show toast-error';
+            btn.disabled = false;
+            btn.textContent = '🔑 Reset password';
+        }
+    }
+
+    async function addStaff() {
+        const btn = document.getElementById('addBtn');
+        const toast = document.getElementById('addToast');
+        const body = {
+            first_name: document.getElementById('newFirst').value.trim(),
+            last_name: document.getElementById('newLast').value.trim(),
+            email: document.getElementById('newEmail').value.trim(),
+            phone: document.getElementById('newPhone').value.trim(),
+            role: document.getElementById('newRole').value
+        };
+
+        toast.classList.remove('show');
+        if (!body.first_name || !body.last_name || !body.email || !body.phone) {
+            toast.textContent = 'Please fill in all fields.';
+            toast.className = 'toast show toast-error';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        try {
+            const res = await fetch(`${API_BASE}/admin/create-staff`, {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify(body)
+            });
+            const data = await readJsonSafely(res);
+            if (!res.ok || !data) throw new Error((data && data.message) || 'Could not add the staff member.');
+
+            ['newFirst', 'newLast', 'newEmail', 'newPhone'].forEach(id => document.getElementById(id).value = '');
+            showTempPanel(`${body.first_name} ${body.last_name} has been added`, data);
+            loadStaff();
+        } catch (err) {
+            toast.textContent = err.message;
+            toast.className = 'toast show toast-error';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Add staff';
+        }
+    }
+
+    // ---------- One-time temporary password panel ----------
+    function showTempPanel(title, data) {
+        document.getElementById('tempTitle').textContent = title;
+        document.getElementById('tempMessage').textContent =
+            'Temporary password (shown only once — it can’t be viewed again after you close this):';
+        document.getElementById('tempPassword').textContent = data.temp_password;
+        document.getElementById('copyBtn').textContent = 'Copy';
+        document.getElementById('tempEmailNote').innerHTML = data.email_sent
+            ? '<p class="ok">✓ It has also been emailed to them.</p>'
+            : '<p class="warn">⚠ The email could not be sent — please give them this password yourself (in person or by phone).</p>';
+        document.getElementById('tempOverlay').classList.add('show');
+    }
+
+    function closeTempPanel() {
+        document.getElementById('tempPassword').textContent = '';
+        document.getElementById('tempOverlay').classList.remove('show');
+    }
+
+    async function copyTempPassword() {
+        const text = document.getElementById('tempPassword').textContent;
+        try {
+            await navigator.clipboard.writeText(text);
+            document.getElementById('copyBtn').textContent = 'Copied ✓';
+        } catch (err) {
+            // Clipboard blocked — the code is selectable, so it can still be copied by hand
+            document.getElementById('copyBtn').textContent = 'Select & copy';
+        }
+    }
+
+    window.addEventListener('load', () => {
+        const worker = getWorkerSession();
+        if (!worker || !worker.token || isTokenExpired(worker.token)) return; // municipal.js is redirecting
+        me = { id: worker.id, role: worker.role };
+
+        if (!['supervisor', 'admin'].includes(worker.role)) {
+            document.getElementById('supervisorOnly').innerHTML =
+                '<div class="card"><h2>Supervisors only</h2><p class="hint" style="margin:0;">Only supervisors can manage staff accounts. If you’ve forgotten your password, use “Forgot password?” on the sign-in page.</p></div>';
+            return;
+        }
+        loadStaff();
+    });
+</script>
+</body>
+</html>
