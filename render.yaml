@@ -1,0 +1,56 @@
+# Render Blueprint — lets Render create the CIRIS web service from this repo.
+# In Render: New + -> Blueprint -> pick this repository.
+# Values marked "sync: false" are secrets you paste into the Render dashboard
+# when prompted; they are never stored in the repository.
+services:
+  - type: web
+    name: ciris
+    runtime: node
+    plan: free
+    region: frankfurt          # closest Render region to South Africa
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true           # redeploys on every push to main
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      # Database (Supabase -> Connect -> "Session pooler" connection string)
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSL
+        value: "true"
+
+      # Login tokens — Render generates a random secret automatically
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Photo storage (Supabase -> Project Settings -> API Keys)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: ciris-uploads
+
+      # This app's own address, used in emails (e.g. https://ciris.onrender.com)
+      - key: APP_URL
+        sync: false
+
+      # Email (password-reset codes, staff invites, security alerts)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+      # AI service — leave empty until ciris-ai-service is deployed;
+      # reports are then saved as "Unclassified" and skip the duplicate check.
+      - key: AI_SERVICE_URL
+        sync: false

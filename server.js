@@ -10,6 +10,9 @@ const nodemailer = require("nodemailer");
 const { validatePasswordStrength } = require("./passwordPolicy");
 const {
     UPLOADS_DIR,
+    USE_SUPABASE,
+    ensureStorageReady,
+    publicImageUrl,
     parseImageDataUrl,
     isStoredImageUrl,
     saveImage,
@@ -28,7 +31,19 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Uploaded report photos / profile pictures. Filenames are random UUIDs
 // that never change, so browsers can cache them for a long time.
-app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "7d", immutable: true }));
+// When photos live in Supabase Storage (deployed), the same "/uploads/..."
+// addresses are redirected there, so pages and the database don't change.
+if (USE_SUPABASE) {
+    app.get("/uploads/:folder/:file", (req, res) => {
+        const target = publicImageUrl(`/uploads/${req.params.folder}/${req.params.file}`);
+        if (!target) return res.status(404).send("Not found");
+        res.set("Cache-Control", "public, max-age=604800, immutable");
+        res.redirect(302, target);
+    });
+} else {
+    app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "7d", immutable: true }));
+}
+ensureStorageReady();
 
 app.get("/", (req, res) => {
     res.redirect("/login.html");
