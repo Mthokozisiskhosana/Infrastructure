@@ -135,7 +135,16 @@ pool.connect()
         console.log("✅ Connected to PostgreSQL");
         client.release();
     })
-    .catch(err => console.log("❌ DB Connection Failed:", err));
+    .catch(err => {
+        console.log("❌ DB Connection Failed:", err.message);
+        if (err.code === "28P01") {
+            // Most common deployment mistake — spell out what to check.
+            console.log("   → The username or password in DATABASE_URL is wrong. Check that:");
+            console.log("     • [YOUR-PASSWORD] was replaced, and the square brackets removed");
+            console.log("     • special characters in the password (@ # / % : ? &) are URL-encoded");
+            console.log("     • with Supabase's Session pooler, the user is postgres.<project-ref>, not just postgres");
+        }
+    });
 
 // ======================================
 // EMAIL TRANSPORT
@@ -261,7 +270,9 @@ app.post("/register", async (req, res) => {
 
     } catch (err) {
         console.log("FULL ERROR:", err);
-        res.status(500).json({ message: err.message });
+        // Details stay in the server log — database errors can reveal
+        // connection details and mean nothing to the person registering.
+        res.status(500).json({ message: "Could not create your account right now. Please try again later." });
     }
 });
 
@@ -628,7 +639,7 @@ app.post("/submit-report", requireAuth, async (req, res) => {
         console.log(err);
         // Don't leave an orphaned file behind if the report wasn't saved.
         if (imageUrl) await deleteImage(imageUrl);
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: "Could not submit your report right now. Please try again later." });
     }
 });
 
