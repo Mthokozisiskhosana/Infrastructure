@@ -1,10 +1,13 @@
-const API_BASE = 'http://localhost:3000';
+
+// Logins now live in sessionStorage (cleared when the browser closes).
+// Remove any leftover login saved by the older localStorage version.
+localStorage.removeItem('municipal_session');
 
 // Reads the same session shape /login now returns: includes token + role.
 // Stored under its own key so a municipal login can never overwrite
 // (or be read as) a community member's session, and vice versa.
 function getWorkerSession() {
-    const sessionData = localStorage.getItem('municipal_session') || sessionStorage.getItem('municipal_session');
+    const sessionData = sessionStorage.getItem('municipal_session');
     if (!sessionData) return null;
     try {
         return JSON.parse(sessionData);
@@ -23,6 +26,19 @@ function authHeaders() {
     };
 }
 
+// True if the JWT's "exp" has passed (or can't be read). The server
+// still verifies every request — this just stops the page carrying on
+// with a login that's no longer valid.
+function isTokenExpired(token) {
+    try {
+        const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        const { exp } = JSON.parse(atob(payload));
+        return typeof exp !== 'number' || exp * 1000 <= Date.now();
+    } catch (err) {
+        return true;
+    }
+}
+
 // Kicks unauthenticated or non-worker sessions back to login.
 // This is a UX convenience, not the real security boundary — the
 // server's requireRole check on /reports is what actually protects
@@ -30,8 +46,17 @@ function authHeaders() {
 function enforceWorkerAccess() {
     const worker = getWorkerSession();
     if (!worker || !worker.token || !['municipal_worker', 'supervisor'].includes(worker.role)) {
+        localStorage.removeItem('municipal_session');
+        sessionStorage.removeItem('municipal_session');
         alert('You need to log in first.');
-        window.location.href = 'municipal-login.html';
+        window.location.replace('municipal-login.html');
+        return false;
+    }
+    if (isTokenExpired(worker.token)) {
+        localStorage.removeItem('municipal_session');
+        sessionStorage.removeItem('municipal_session');
+        alert('Your session has expired. Please log in again.');
+        window.location.replace('municipal-login.html');
         return false;
     }
     if (worker.must_change_password) {
@@ -101,7 +126,7 @@ async function loadReports() {
 
         tbody.innerHTML = reports.map(r => `
             <tr ${clickable ? `onclick="viewReport(${r.id})"` : ''} class="${clickable ? '' : 'view-only'}">
-                <td>${r.image ? `<img class="thumb" src="${r.image}">` : `<div class="thumb"></div>`}</td>
+                <td>${r.image ? `<img class="thumb" src="${assetUrl(r.image)}">` : `<div class="thumb"></div>`}</td>
                 <td>${escapeHtml(r.description)}</td>
                 <td>${r.ai_category ? `${escapeHtml(r.ai_category)} <span style="color:#94a3b8;font-size:11px;">(${Math.round(r.ai_confidence * 100)}%)</span>` : '<span style="color:#94a3b8;">Unclassified</span>'}</td>
                 <td>${escapeHtml(r.first_name)} ${escapeHtml(r.last_name)}</td>
@@ -142,7 +167,7 @@ async function updateStatus(reportId, newStatus) {
 function logoutWorker() {
     localStorage.removeItem('municipal_session');
     sessionStorage.removeItem('municipal_session');
-    window.location.href = 'municipal-login.html';
+    window.location.replace('municipal-login.html');
 }
 
 function viewReport(id) {

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CIRIS — Municipal Login</title>
@@ -35,7 +37,30 @@
     font-size: 14px;
     margin-bottom: 16px;
   }
-  button {
+  .password-field {
+    position: relative;
+  }
+  .password-field input {
+    padding-right: 42px;
+  }
+  .password-toggle {
+    position: absolute;
+    right: 8px;
+    top: 0;
+    bottom: 16px;
+    width: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    color: #94a3b8;
+  }
+  .password-toggle:hover { color: #475569; }
+  .password-toggle svg { width: 19px; height: 19px; }
+  button.submit-btn {
     width: 100%;
     padding: 11px;
     background: var(--navy);
@@ -46,7 +71,7 @@
     font-weight: 600;
     cursor: pointer;
   }
-  button:hover { background: var(--accent); }
+  button.submit-btn:hover { background: var(--accent); }
   .error {
     background: #fef2f2;
     color: #b91c1c;
@@ -72,12 +97,33 @@
   <input type="email" id="email" placeholder="you@municipality.gov.za">
 
   <label for="password">Password</label>
-  <input type="password" id="password" placeholder="••••••••">
+  <div class="password-field">
+    <input type="password" id="password" placeholder="••••••••">
+    <button type="button" class="password-toggle" onclick="togglePassword('password', this)" aria-label="Show password"></button>
+  </div>
 
-  <button onclick="workerLogin()">Sign in</button>
+  <button class="submit-btn" onclick="workerLogin()">Sign in</button>
 </div>
 
+<script src="api-config.js"></script>
 <script>
+const EYE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+
+function initPasswordToggles() {
+    document.querySelectorAll('.password-toggle').forEach(btn => {
+        btn.innerHTML = EYE_ICON;
+    });
+}
+
+function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.innerHTML = showing ? EYE_ICON : EYE_OFF_ICON;
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+}
+
 async function workerLogin() {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
@@ -91,12 +137,17 @@ async function workerLogin() {
     }
 
     try {
-        const res = await fetch('http://localhost:3000/login', {
+        const res = await fetch(`${API_BASE}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
         });
-        const data = await res.json();
+        const data = await readJsonSafely(res);
+        if (!data) {
+            errorBox.textContent = "Could not reach the CIRIS server. Make sure it's running (npm start) and try again.";
+            errorBox.style.display = 'block';
+            return;
+        }
 
         if (!res.ok) {
             errorBox.textContent = data.message || 'Login failed.';
@@ -106,16 +157,14 @@ async function workerLogin() {
 
         // This account exists and the password is correct, but this is
         // the MUNICIPAL portal — reject community_member accounts here
-        // even though their credentials are valid. The dashboard itself
-        // is protected server-side too (requireRole), this just gives a
-        // clearer message than a silent redirect would.
+        // even though their credentials are valid.
         if (!['municipal_worker', 'supervisor'].includes(data.role)) {
             errorBox.textContent = 'This account does not have municipal staff access.';
             errorBox.style.display = 'block';
             return;
         }
 
-        localStorage.setItem('user_session', JSON.stringify(data));
+        sessionStorage.setItem('municipal_session', JSON.stringify(data));
 
         if (data.must_change_password) {
             window.location.href = 'municipal-set-password.html';
@@ -129,6 +178,13 @@ async function workerLogin() {
         errorBox.style.display = 'block';
     }
 }
+
+initPasswordToggles();
+
+// Opening the login page always starts a fresh login, so the next person
+// on a shared computer can't carry on as the previous staff member.
+localStorage.removeItem('municipal_session');
+sessionStorage.removeItem('municipal_session');
 </script>
 </body>
 </html>

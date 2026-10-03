@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIRIS — Municipal Dashboard</title>
+<style>
+  :root {
+    --navy: #1e3c72;
+    --navy-dark: #14294f;
+    --accent: #2f7fd1;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --muted: #64748b;
+
+    --received: #b45309;
+    --received-bg: #fef3c7;
+    --review: #1d4ed8;
+    --review-bg: #dbeafe;
+    --assigned: #7c3aed;
+    --assigned-bg: #ede9fe;
+    --resolved: #15803d;
+    --resolved-bg: #dcfce7;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  aside {
+    width: 220px;
+    background: var(--navy-dark);
+    color: #cbd5e1;
+    padding: 24px 0;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .brand span { color: var(--accent); }
+  nav { margin-top: 16px; }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+  }
+  nav a.active {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+  }
+  nav a:hover { background: rgba(255,255,255,0.04); }
+  nav a.nav-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* Main */
+  main { flex: 1; padding: 28px 32px; }
+  header.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  header.topbar h1 { font-size: 20px; font-weight: 600; }
+  .worker-badge { font-size: 13px; color: var(--muted); }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .bell-btn {
+    position: relative;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    padding: 6px;
+    display: flex;
+    align-items: center;
+  }
+  .bell-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .bell-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #dc2626;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+  }
+  .bell-badge.show { display: flex; }
+
+  .filters {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .filters input, .filters select {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    background: var(--card);
+  }
+  .filters input { flex: 1; min-width: 200px; }
+
+  table {
+    width: 100%;
+    background: var(--card);
+    border-radius: 10px;
+    border-collapse: collapse;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  thead { background: #f8fafc; }
+  th, td {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+  tbody tr:hover { background: #f8fafc; cursor: pointer; }
+  tbody tr.view-only:hover { background: transparent; cursor: default; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .thumb {
+    width: 44px; height: 44px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #e2e8f0;
+  }
+
+  .status-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .status-Received  { color: var(--received); background: var(--received-bg); }
+  .status-Under_Review { color: var(--review); background: var(--review-bg); }
+  .status-Assigned  { color: var(--assigned); background: var(--assigned-bg); }
+  .status-Resolved  { color: var(--resolved); background: var(--resolved-bg); }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  select.status-select {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  /* Summary cards */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 1000px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px)  { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .stat-card {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-top: 4px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    text-decoration: none;
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  .stat-value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .stat-card--total    { border-top-color: var(--navy); }
+  .stat-card--received { border-top-color: var(--received); }
+  .stat-card--received .stat-value { color: var(--received); }
+  .stat-card--review   { border-top-color: var(--review); }
+  .stat-card--review .stat-value { color: var(--review); }
+  .stat-card--assigned { border-top-color: var(--assigned); }
+  .stat-card--assigned .stat-value { color: var(--assigned); }
+  .stat-card--resolved { border-top-color: var(--resolved); }
+  .stat-card--resolved .stat-value { color: var(--resolved); }
+
+  /* Recent reports */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+  .section-header h2 { font-size: 16px; font-weight: 600; }
+  .view-all {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .view-all:hover { text-decoration: underline; }
+  .table-footer {
+    text-align: center;
+    margin-top: 14px;
+  }
+  .view-all-btn {
+    display: inline-block;
+    padding: 10px 22px;
+    border-radius: 8px;
+    background: var(--navy);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .view-all-btn:hover { background: var(--accent); }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .logout-btn:hover { background: rgba(248,113,113,0.08); }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span>◆</span> CIRIS <small style="font-weight:400;color:#94a3b8;">Municipal</small></div>
+  <nav>
+    <a href="municipal-dashboard.html" class="active">Dashboard</a>
+    <a href="municipal-reports.html">Reports</a>
+    <a href="municipal-feedback.html">Feedback</a>
+    <a href="municipal-analytics.html">Analytics</a>
+    
+
+    
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logoutWorker()">⏻ Log out</button>
+  </div>
+</aside>
+
+<main>
+  <header class="topbar">
+    <h1>Dashboard</h1>
+    <div class="topbar-right">
+      <button class="bell-btn" onclick="window.location.href='municipal-notifications.html'" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="bell-badge" id="bellBadge">0</span>
+      </button>
+      <span class="worker-badge" id="workerName">Loading worker...</span>
+    </div>
+  </header>
+
+  <!-- Summary — each card opens the Reports page filtered to that status -->
+  <div class="stats-grid">
+    <a class="stat-card stat-card--total" href="municipal-reports.html">
+      <div class="stat-label">Total Reports</div>
+      <div class="stat-value" id="statTotal">–</div>
+      <div class="stat-sub" id="statNewWeek">&nbsp;</div>
+    </a>
+    <a class="stat-card stat-card--received" href="municipal-reports.html?status=Received">
+      <div class="stat-label">Received</div>
+      <div class="stat-value" id="statReceived">–</div>
+      <div class="stat-sub">Awaiting review</div>
+    </a>
+    <a class="stat-card stat-card--review" href="municipal-reports.html?status=Under%20Review">
+      <div class="stat-label">Under Review</div>
+      <div class="stat-value" id="statReview">–</div>
+      <div class="stat-sub">Being assessed</div>
+    </a>
+    <a class="stat-card stat-card--assigned" href="municipal-reports.html?status=Assigned">
+      <div class="stat-label">Assigned</div>
+      <div class="stat-value" id="statAssigned">–</div>
+      <div class="stat-sub">Repair in progress</div>
+    </a>
+    <a class="stat-card stat-card--resolved" href="municipal-reports.html?status=Resolved">
+      <div class="stat-label">Resolved</div>
+      <div class="stat-value" id="statResolved">–</div>
+      <div class="stat-sub" id="statResolvedPct">&nbsp;</div>
+    </a>
+  </div>
+
+  <div class="section-header">
+    <h2>Recent reports</h2>
+    <a class="view-all" href="municipal-reports.html">View all reports →</a>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Image</th>
+        <th>Description</th>
+        <th>AI Category</th>
+        <th>Reported by</th>
+        <th>Date</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="recentBody">
+      <tr><td colspan="6" class="empty-state">Loading recent reports...</td></tr>
+    </tbody>
+  </table>
+
+  <div class="table-footer">
+    <a class="view-all-btn" href="municipal-reports.html">View all reports</a>
+  </div>
+</main>
+
+<script src="api-config.js"></script>
+<script src="municipal.js"></script>
+<script>
+    const RECENT_LIMIT = 5;
+
+    function setText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    }
+
+    async function loadStats() {
+        try {
+            const res = await fetch(`${API_BASE}/reports/stats`, { headers: authHeaders() });
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            const s = await readJsonSafely(res);
+            if (!res.ok || !s) throw new Error('Stats unavailable');
+
+            setText('statTotal', s.total);
+            setText('statReceived', s.received);
+            setText('statReview', s.under_review);
+            setText('statAssigned', s.assigned);
+            setText('statResolved', s.resolved);
+            setText('statNewWeek', `+${s.new_this_week} this week`);
+            setText('statResolvedPct', s.total
+                ? `${Math.round(s.resolved / s.total * 100)}% of all reports`
+                : 'No reports yet');
+        } catch (err) {
+            console.error(err);
+            setText('statNewWeek', 'Could not load statistics');
+        }
+    }
+
+    async function loadRecentReports() {
+        const tbody = document.getElementById('recentBody');
+        try {
+            const res = await fetch(`${API_BASE}/reports?limit=${RECENT_LIMIT}`, { headers: authHeaders() });
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            const reports = await readJsonSafely(res);
+            if (!res.ok || !Array.isArray(reports)) throw new Error('Reports unavailable');
+
+            if (reports.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No active reports right now.</td></tr>`;
+                return;
+            }
+
+            // Rows open the report details page (viewReport is in municipal.js)
+            tbody.innerHTML = reports.map(r => `
+                <tr onclick="viewReport(${Number(r.id)})" title="Open report details">
+                    <td>${r.image ? `<img class="thumb" src="${assetUrl(r.image)}" alt="">` : `<div class="thumb"></div>`}</td>
+                    <td>${escapeHtml(r.description)}</td>
+                    <td>${r.ai_category
+                        ? `${escapeHtml(r.ai_category)} <span style="color:#94a3b8;font-size:11px;">(${Math.round(r.ai_confidence * 100)}%)</span>`
+                        : '<span style="color:#94a3b8;">Unclassified</span>'}</td>
+                    <td>${escapeHtml(r.first_name)} ${escapeHtml(r.last_name)}</td>
+                    <td>${new Date(r.date).toLocaleDateString('en-ZA')}</td>
+                    <td><span class="status-pill ${statusClass(r.status)}">${escapeHtml(r.status)}</span></td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            console.error(err);
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Could not reach the server. Is it running?</td></tr>`;
+        }
+    }
+
+    window.addEventListener('load', () => {
+        // municipal.js's own load handler has already checked the login
+        // (and redirected if needed) — only load data for a valid session.
+        const worker = getWorkerSession();
+        if (!worker || !worker.token || isTokenExpired(worker.token)) return;
+
+        loadStats();
+        loadRecentReports();
+    });
+</script>
+</body>
+</html>

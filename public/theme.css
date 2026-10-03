@@ -1,0 +1,256 @@
+/* ============================================
+   DARK MODE (shared by every page — see theme.js)
+
+   theme.js sets <html data-theme="dark"> when dark mode is on. Every rule
+   here is scoped to that attribute, so light mode is completely untouched,
+   and the extra "html[data-theme]" prefix makes these rules win over each
+   page's own styles without needing !important.
+
+   Navy headers, sidebars, buttons and the bottom tab bar already read well
+   on a dark background, so they're intentionally left alone.
+   ============================================ */
+
+html[data-theme="dark"] {
+    color-scheme: dark;              /* dark native scrollbars, inputs, date pickers */
+
+    --dm-bg: #0f172a;
+    --dm-surface: #1e293b;
+    --dm-surface-2: #273449;
+    --dm-border: #334155;
+    --dm-text: #e2e8f0;
+    --dm-muted: #94a3b8;
+    --dm-link: #93c5fd;              /* replaces navy text, which vanishes on dark */
+    --dm-unread: #1e3a5f;
+
+    /* Municipal pages are built on these variables, so overriding them
+       re-themes most of the staff portal in one go. */
+    --bg: var(--dm-bg);
+    --card: var(--dm-surface);
+    --border: var(--dm-border);
+    --text: var(--dm-text);
+    --muted: var(--dm-muted);
+
+    --received: #fbbf24;
+    --received-bg: rgba(251, 191, 36, 0.15);
+    --review: #93c5fd;
+    --review-bg: rgba(147, 197, 253, 0.15);
+    --assigned: #c4b5fd;
+    --assigned-bg: rgba(196, 181, 253, 0.15);
+    --resolved: #86efac;
+    --resolved-bg: rgba(134, 239, 172, 0.15);
+}
+
+/* ---------- Page background & base text ---------- */
+/* background-color only, so the gradient on the login pages is kept */
+html[data-theme="dark"] body {
+    background-color: var(--dm-bg);
+    color: var(--dm-text);
+}
+
+/* ---------- Cards and panels ---------- */
+html[data-theme="dark"] .activity-card,
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .container,
+html[data-theme="dark"] .edit-form,
+html[data-theme="dark"] .feedback-form,
+html[data-theme="dark"] .feedback-item,
+html[data-theme="dark"] .history-stat,
+html[data-theme="dark"] .notif-item,
+html[data-theme="dark"] .option-item,
+html[data-theme="dark"] .profile-card,
+html[data-theme="dark"] .report-box,
+html[data-theme="dark"] .report-item,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .status-badge-card,
+html[data-theme="dark"] .gps-box,
+html[data-theme="dark"] .consent-box,
+html[data-theme="dark"] .reply-block,
+html[data-theme="dark"] .readonly-field,
+html[data-theme="dark"] table {
+    background-color: var(--dm-surface);
+    border-color: var(--dm-border);
+    color: var(--dm-text);
+}
+
+html[data-theme="dark"] .tabs,
+html[data-theme="dark"] thead,
+html[data-theme="dark"] .preview,
+html[data-theme="dark"] .thumb,
+html[data-theme="dark"] .photo-tile img {
+    background-color: var(--dm-surface-2);
+    border-color: var(--dm-border);
+}
+
+html[data-theme="dark"] .notif-item.unread {
+    background-color: var(--dm-unread);
+    border-color: #2b5585;
+}
+
+html[data-theme="dark"] .consent-box.consent-missing {
+    background-color: rgba(239, 68, 68, 0.12);
+    border-color: #b91c1c;
+}
+
+/* ---------- Hover states ---------- */
+html[data-theme="dark"] .notif-item:hover,
+html[data-theme="dark"] tbody tr:hover,
+html[data-theme="dark"] .btn-cancel:hover,
+html[data-theme="dark"] .view-tab:not(.active):hover {
+    background-color: var(--dm-surface-2);
+}
+html[data-theme="dark"] tbody tr.view-only:hover {
+    background-color: transparent;
+}
+
+/* ---------- Form fields ---------- */
+html[data-theme="dark"] input[type="text"],
+html[data-theme="dark"] input[type="email"],
+html[data-theme="dark"] input[type="password"],
+html[data-theme="dark"] input[type="tel"],
+html[data-theme="dark"] input[type="search"],
+html[data-theme="dark"] input:not([type]),
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+    background-color: var(--dm-surface-2);
+    color: var(--dm-text);
+    border-color: var(--dm-border);
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+    color: #64748b;
+}
+
+/* ---------- Secondary buttons (light grey in light mode) ---------- */
+html[data-theme="dark"] .secondary-btn,
+html[data-theme="dark"] .btn-secondary,
+html[data-theme="dark"] .btn-cancel,
+html[data-theme="dark"] .cancel-btn {
+    background-color: var(--dm-surface-2);
+    color: var(--dm-text);
+    border-color: var(--dm-border);
+}
+
+/* ---------- Dark text -> light text ---------- */
+html[data-theme="dark"] label,
+html[data-theme="dark"] .activity-title,
+html[data-theme="dark"] .brand h1,
+html[data-theme="dark"] .chart-card h2,
+html[data-theme="dark"] .feedback-message,
+html[data-theme="dark"] .notif-title,
+html[data-theme="dark"] .profile-name,
+html[data-theme="dark"] .reply-text,
+html[data-theme="dark"] .report-title,
+html[data-theme="dark"] .section-title,
+html[data-theme="dark"] .stat-value,
+html[data-theme="dark"] .status-section-title,
+html[data-theme="dark"] .success-title,
+html[data-theme="dark"] .tab {
+    color: var(--dm-text);
+}
+
+html[data-theme="dark"] .notif-message,
+html[data-theme="dark"] .photo-tile,
+html[data-theme="dark"] .preview,
+html[data-theme="dark"] .profile-label,
+html[data-theme="dark"] .remember,
+html[data-theme="dark"] .section-sub,
+html[data-theme="dark"] .section-subtitle,
+html[data-theme="dark"] .show-password,
+html[data-theme="dark"] .toggle-pw,
+html[data-theme="dark"] .reply-label,
+html[data-theme="dark"] .reply-form-label {
+    color: var(--dm-muted);
+}
+
+/* Navy links/text buttons -> light blue so they stay visible */
+html[data-theme="dark"] .notif-link,
+html[data-theme="dark"] .mark-all-btn,
+html[data-theme="dark"] .view-all-link,
+html[data-theme="dark"] .back-link,
+html[data-theme="dark"] .btn-link,
+html[data-theme="dark"] .forgot,
+html[data-theme="dark"] .show-password:hover,
+html[data-theme="dark"] .toggle-pw:hover,
+html[data-theme="dark"] .password-toggle:hover {
+    color: var(--dm-link);
+}
+
+/* profile.html forces its read-only fields light with !important */
+html[data-theme="dark"] .readonly-field {
+    background-color: var(--dm-surface) !important;
+    color: var(--dm-muted);
+}
+
+/* Navy links written as inline style="color:#1a3a6d" (e.g. "Change email address") */
+html[data-theme="dark"] a[style*="#1a3a6d"] {
+    color: var(--dm-link) !important;
+}
+
+/* Login page "New User?" hint box */
+html[data-theme="dark"] .info-box {
+    background-color: rgba(147, 197, 253, 0.1);
+    border-color: #2b5585;
+    color: #bfdbfe;
+}
+
+/* Resident home activity numbers — brighter shades for dark backgrounds */
+html[data-theme="dark"] .activity-card--pending .activity-value,
+html[data-theme="dark"] .activity-card--pending .activity-label { color: #fbbf24; }
+html[data-theme="dark"] .activity-card--progress .activity-value,
+html[data-theme="dark"] .activity-card--progress .activity-label { color: #93c5fd; }
+html[data-theme="dark"] .activity-card--resolved .activity-value,
+html[data-theme="dark"] .activity-card--resolved .activity-label { color: #6ee7b7; }
+
+/* Keep the coloured status numbers/labels readable */
+html[data-theme="dark"] .photo-tile--after,
+html[data-theme="dark"] .repair-done-note {
+    color: #6ee7b7;
+}
+html[data-theme="dark"] .repair-done-note {
+    background-color: rgba(16, 185, 129, 0.12);
+}
+html[data-theme="dark"] .delete-report-btn {
+    background-color: rgba(239, 68, 68, 0.12);
+    border-color: #7f1d1d;
+    color: #fca5a5;
+}
+
+/* ============================================
+   THEME TOGGLE (inserted by theme.js)
+   ============================================ */
+
+/* Municipal sidebar — styled like the Log out button */
+.theme-toggle-staff {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #cbd5e1;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+}
+.theme-toggle-staff:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* Floating button on pages without a sidebar (login, password pages) */
+.theme-toggle-floating {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(15, 23, 42, 0.55);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(4px);
+}
+.theme-toggle-floating:hover { background: rgba(15, 23, 42, 0.8); }

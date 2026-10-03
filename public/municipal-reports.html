@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CIRIS — All Reports</title>
@@ -258,12 +260,23 @@
   </table>
 </main>
 
+<script src="api-config.js"></script>
 <script>const ROWS_CLICKABLE = true;</script>
 <script>
     // Tracked here (not in municipal.js) since only this page has the
     // tabs — municipal.js just needs to know which view is selected
     // when it builds the /reports request.
     window.reportsView = 'active'; // 'active' | 'history'
+
+    // Dashboard stat cards link here as municipal-reports.html?status=Received
+    // etc. — pre-select that filter before municipal.js loads the list.
+    (function applyStatusFromUrl() {
+        const wanted = new URLSearchParams(window.location.search).get('status');
+        const select = document.getElementById('statusFilter');
+        if (wanted && select && [...select.options].some(o => o.value === wanted)) {
+            select.value = wanted;
+        }
+    })();
 
     function switchReportsView(view) {
         window.reportsView = view;

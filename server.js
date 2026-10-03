@@ -1,4 +1,5 @@
 require("dotenv").config();
+const path = require("path");
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
@@ -7,13 +8,33 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const { validatePasswordStrength } = require("./passwordPolicy");
+const {
+    UPLOADS_DIR,
+    parseImageDataUrl,
+    isStoredImageUrl,
+    saveImage,
+    readImage,
+    deleteImage
+} = require("./imageStorage");
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('.'));
+
+// Serve only the frontend files (put your .html/.css/.js in a "public" folder)
+// instead of the whole project root — keeps server.js, package.json, node_modules
+// etc. from being served as static files.
+app.use(express.static(path.join(__dirname, "public")));
+
+// Uploaded report photos / profile pictures. Filenames are random UUIDs
+// that never change, so browsers can cache them for a long time.
+app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "7d", immutable: true }));
 
 app.get("/", (req, res) => {
+    res.redirect("/login.html");
+});
+
+app.get("/api/health", (req, res) => {
     res.json({ message: "Server is running!" });
 });
 
@@ -68,15 +89,31 @@ function requireRole(...allowedRoles) {
 // ======================================
 // POSTGRESQL CONFIG
 // ======================================
-const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT) || 5432,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    max: 10,
-    idleTimeoutMillis: 30000
-});
+// Render (and most managed Postgres hosts) require SSL for external
+// connections, and Render also gives you a single DATABASE_URL instead of
+// separate host/user/password vars. This supports either:
+//   - Set DATABASE_URL (Render Postgres "Internal/External Database URL"), or
+//   - Keep using DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD like before.
+// Set DB_SSL=false only for a local Postgres that doesn't use SSL.
+const useSSL = process.env.DB_SSL !== "false";
+
+const pool = process.env.DATABASE_URL
+    ? new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: useSSL ? { rejectUnauthorized: false } : false,
+        max: 10,
+        idleTimeoutMillis: 30000
+    })
+    : new Pool({
+        host: process.env.DB_HOST,
+        port: Number(process.env.DB_PORT) || 5432,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        ssl: useSSL ? { rejectUnauthorized: false } : false,
+        max: 10,
+        idleTimeoutMillis: 30000
+    });
 
 pool.connect()
     .then(client => {
@@ -122,10 +159,6 @@ async function sendResetCodeEmail(toEmail, code) {
 // ======================================
 // NOTIFICATIONS helper
 // ======================================
-// userId is optional: leave it null for a staff-wide notification
-// (new report / new feedback). Pass a specific user's id to create a
-// *personal* notification only that person can see — e.g. "the
-// municipality replied to your feedback".
 async function createNotification(type, relatedId, title, message, userId = null) {
     try {
         await pool.query(
@@ -161,8 +194,17 @@ async function getUserDisplayName(userId) {
 // ======================================
 // REGISTER API
 // ======================================
+// POPIA consent wording shown on the registration form. If the wording
+// ever changes, bump the version so each user's record shows exactly
+// which text they agreed to.
+const POPIA_CONSENT_VERSION = "2026-10-v1";
+
 app.post("/register", async (req, res) => {
-    const { first_name, last_name, email, phone, password } = req.body;
+    const { first_name, last_name, email, phone, password, popia_consent } = req.body;
+
+    if (popia_consent !== true) {
+        return res.status(400).json({ message: "You must consent to the processing of your personal information (POPIA) to create an account." });
+    }
 
     const allowedDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
     const emailDomain = (email || "").split('@')[1];
@@ -194,9 +236,10 @@ app.post("/register", async (req, res) => {
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
         await pool.query(
-            `INSERT INTO Users (first_name, last_name, email, phone, password, role)
-             VALUES ($1, $2, $3, $4, $5, 'community_member')`,
-            [first_name, last_name, email, phone, passwordHash]
+            `INSERT INTO Users (first_name, last_name, email, phone, password, role,
+                                popia_consent_at, popia_consent_version)
+             VALUES ($1, $2, $3, $4, $5, 'community_member', NOW(), $6)`,
+            [first_name, last_name, email, phone, passwordHash, POPIA_CONSENT_VERSION]
         );
 
         res.json({ message: "User registered successfully" });
@@ -450,9 +493,14 @@ app.post("/submit-report", requireAuth, async (req, res) => {
         return res.status(403).json({ message: "You can only submit reports for your own account" });
     }
 
+    const parsedImage = image ? parseImageDataUrl(image) : null;
+    if (image && !parsedImage) {
+        return res.status(400).json({ message: "Invalid image format. Please attach a JPEG or PNG photo." });
+    }
+
     const newLocation = parseLocation(location);
 
-    if (newLocation && image) {
+    if (newLocation && parsedImage) {
         try {
             const candidatesResult = await pool.query(
                 `SELECT id, image, location FROM Reports
@@ -470,17 +518,15 @@ app.post("/submit-report", requireAuth, async (req, res) => {
 
             console.log(`[duplicate check] Found ${candidatesResult.rows.length} active reports, ${nearbyCandidates.length} within ${DUPLICATE_RADIUS_METERS}m`);
 
-            const newImageBuffer = Buffer.from(
-                image.includes(',') ? image.split(',')[1] : image, 'base64'
-            );
-
             for (const candidate of nearbyCandidates) {
-                const candidateBuffer = Buffer.from(
-                    candidate.image.includes(',') ? candidate.image.split(',')[1] : candidate.image, 'base64'
-                );
+                const candidateBuffer = await readImage(candidate.image);
+                if (!candidateBuffer) {
+                    console.log(`[duplicate check] Could not read image for report #${candidate.id}, skipping`);
+                    continue;
+                }
 
                 const formData = new FormData();
-                formData.append('image1', new Blob([newImageBuffer]), 'new.jpg');
+                formData.append('image1', new Blob([parsedImage.buffer]), 'new.jpg');
                 formData.append('image2', new Blob([candidateBuffer]), 'existing.jpg');
 
                 const dupRes = await fetch(`${process.env.AI_SERVICE_URL || 'http://localhost:8000'}/check-duplicate`, {
@@ -511,13 +557,10 @@ app.post("/submit-report", requireAuth, async (req, res) => {
     let ai_category = null;
     let ai_confidence = null;
 
-    if (image) {
+    if (parsedImage) {
         try {
-            const base64Data = image.includes(',') ? image.split(',')[1] : image;
-            const buffer = Buffer.from(base64Data, 'base64');
-
             const formData = new FormData();
-            formData.append('image', new Blob([buffer]), 'report.jpg');
+            formData.append('image', new Blob([parsedImage.buffer]), 'report.jpg');
 
             const aiRes = await fetch(`${process.env.AI_SERVICE_URL || 'http://localhost:8000'}/classify`, {
                 method: 'POST',
@@ -536,12 +579,18 @@ app.post("/submit-report", requireAuth, async (req, res) => {
         }
     }
 
+    let imageUrl = null;
+
     try {
+        if (parsedImage) {
+            imageUrl = await saveImage(parsedImage, "reports");
+        }
+
         const insertResult = await pool.query(
             `INSERT INTO Reports (user_id, description, image, location, ai_category, ai_confidence)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING id`,
-            [user_id, description, image || null, location || null, ai_category, ai_confidence]
+            [user_id, description, imageUrl, location || null, ai_category, ai_confidence]
         );
 
         const newReportId = insertResult.rows[0].id;
@@ -562,6 +611,8 @@ app.post("/submit-report", requireAuth, async (req, res) => {
 
     } catch (err) {
         console.log(err);
+        // Don't leave an orphaned file behind if the report wasn't saved.
+        if (imageUrl) await deleteImage(imageUrl);
         res.status(500).json({ message: err.message });
     }
 });
@@ -579,7 +630,8 @@ app.get("/my-reports/:user_id", requireAuth, async (req, res) => {
 
     try {
         const result = await pool.query(
-            `SELECT id, description, image, location, status, date, ai_category, ai_confidence
+            `SELECT id, description, image, location, status, date, resolved_at, ai_category, ai_confidence,
+                    after_image, after_image_at
              FROM Reports
              WHERE user_id = $1 AND is_archived = $2
              ORDER BY date DESC`,
@@ -595,26 +647,56 @@ app.get("/my-reports/:user_id", requireAuth, async (req, res) => {
 });
 
 // ======================================
-// DELETE ALL USER REPORTS API
+// DELETE ONE OF MY REPORTS
+// A resident can withdraw their own report only while it is still
+// "Received" — once the municipality starts working on it, the record
+// belongs to the municipality and can't be removed by the resident.
 // ======================================
-app.delete("/clear-reports/:user_id", requireAuth, async (req, res) => {
-    const { user_id } = req.params;
-
-    if (req.user.role === "community_member" && String(req.user.id) !== String(user_id)) {
-        return res.status(403).json({ message: "You can only clear your own reports" });
-    }
+app.delete("/reports/:id", requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const client = await pool.connect();
 
     try {
-        await pool.query(
-            "DELETE FROM Reports WHERE user_id = $1",
-            [user_id]
+        const result = await client.query(
+            "SELECT user_id, status, image, after_image FROM Reports WHERE id = $1",
+            [id]
         );
 
-        res.json({ message: "Reports cleared successfully" });
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Report not found" });
+        }
+
+        const report = result.rows[0];
+
+        if (String(report.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ message: "You can only delete your own reports" });
+        }
+
+        if (report.status !== "Received") {
+            return res.status(409).json({
+                message: `This report is already "${report.status}" and the municipality is working on it, so it can no longer be deleted.`
+            });
+        }
+
+        await client.query("BEGIN");
+        await client.query(
+            "DELETE FROM Notifications WHERE related_id = $1 AND type IN ('report', 'report_status')",
+            [id]
+        );
+        await client.query("DELETE FROM Reports WHERE id = $1", [id]);
+        await client.query("COMMIT");
+
+        await deleteImage(report.image);
+        await deleteImage(report.after_image);
+
+        res.json({ message: "Report deleted" });
 
     } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
         console.log(err);
         res.status(500).json({ message: "Server error" });
+    } finally {
+        client.release();
     }
 });
 
@@ -649,9 +731,52 @@ app.get("/reports", requireAuth, requireRole("municipal_worker", "supervisor"), 
     query += " WHERE " + conditions.join(" AND ");
     query += " ORDER BY r.date DESC";
 
+    // Optional ?limit=N (e.g. the dashboard's "recent reports" list)
+    const limit = parseInt(req.query.limit, 10);
+    if (Number.isInteger(limit) && limit > 0) {
+        values.push(Math.min(limit, 100));
+        query += ` LIMIT $${values.length}`;
+    }
+
     try {
         const result = await pool.query(query, values);
         res.json(result.rows);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ======================================
+// REPORT STATISTICS (Municipal dashboard summary cards)
+// Must be registered before /reports/:id, or "stats" would be read as an id.
+// Resolved counts include archived reports, so the totals reflect all
+// work ever done — not just what's still on the active list.
+// ======================================
+app.get("/reports/stats", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT COUNT(*)                                                    AS total,
+                    COUNT(*) FILTER (WHERE status = 'Received')                 AS received,
+                    COUNT(*) FILTER (WHERE status = 'Under Review')             AS under_review,
+                    COUNT(*) FILTER (WHERE status = 'Assigned')                 AS assigned,
+                    COUNT(*) FILTER (WHERE status = 'Resolved')                 AS resolved,
+                    COUNT(*) FILTER (WHERE date >= NOW() - INTERVAL '7 days')   AS new_this_week
+             FROM Reports`
+        );
+
+        const row = result.rows[0];
+        const n = key => parseInt(row[key], 10) || 0;
+
+        res.json({
+            total: n("total"),
+            received: n("received"),
+            under_review: n("under_review"),
+            assigned: n("assigned"),
+            in_progress: n("under_review") + n("assigned"),
+            resolved: n("resolved"),
+            new_this_week: n("new_this_week")
+        });
     } catch (err) {
         console.log(err);
         res.status(500).json({ message: "Server error" });
@@ -665,6 +790,7 @@ app.get("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor
     try {
         const result = await pool.query(
             `SELECT r.id, r.description, r.image, r.location, r.status, r.date, r.ai_category, r.ai_confidence,
+                    r.after_image, r.after_image_at, r.resolved_at, r.is_archived,
                     u.first_name, u.last_name, u.email
              FROM Reports r
              JOIN Users u ON r.user_id = u.id
@@ -686,6 +812,20 @@ app.get("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor
 // ======================================
 // UPDATE REPORT STATUS
 // ======================================
+function statusChangeNotification(status, description) {
+    const issue = truncate(description, 80);
+    switch (status) {
+        case "Under Review":
+            return { title: "Your report is under review", message: `The municipality is reviewing your report: "${issue}"` };
+        case "Assigned":
+            return { title: "A repair team has been assigned", message: `Your report has been assigned for repair: "${issue}"` };
+        case "Resolved":
+            return { title: "Your report has been resolved", message: `The municipality marked this issue as fixed: "${issue}". It will move to your History within 24 hours.` };
+        default:
+            return { title: `Your report status changed to ${status}`, message: `"${issue}"` };
+    }
+}
+
 app.patch("/reports/:id", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -696,22 +836,123 @@ app.patch("/reports/:id", requireAuth, requireRole("municipal_worker", "supervis
     }
 
     try {
-        const result = await pool.query(
-            `UPDATE Reports
-             SET status = $1,
-                 resolved_at = CASE WHEN $1 = 'Resolved' THEN NOW() ELSE NULL END
-             WHERE id = $2
-             RETURNING id, description, status`,
-            [status, id]
+        const existing = await pool.query(
+            "SELECT status FROM Reports WHERE id = $1",
+            [id]
         );
 
-        if (result.rows.length === 0) {
+        if (existing.rows.length === 0) {
             return res.status(404).json({ message: "Report not found" });
         }
 
-        res.json({ message: "Status updated", report: result.rows[0] });
+        const oldStatus = existing.rows[0].status;
+
+        // Re-saving "Resolved" keeps the original resolved_at, so the
+        // 24h auto-archive timer isn't restarted every time.
+        // ($3 is a separate boolean — reusing $1 as both varchar and text
+        // makes Postgres fail with "inconsistent types deduced for parameter".)
+        const result = await pool.query(
+            `UPDATE Reports
+             SET status = $1,
+                 resolved_at = CASE
+                     WHEN $3 THEN COALESCE(resolved_at, NOW())
+                     ELSE NULL
+                 END
+             WHERE id = $2
+             RETURNING id, user_id, description, status`,
+            [status, id, status === "Resolved"]
+        );
+
+        const report = result.rows[0];
+
+        if (oldStatus !== status) {
+            const { title, message } = statusChangeNotification(status, report.description);
+            await createNotification("report_status", report.id, title, message, report.user_id);
+        }
+
+        res.json({ message: "Status updated", report: { id: report.id, description: report.description, status: report.status } });
     } catch (err) {
         console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ======================================
+// UPLOAD AFTER-REPAIR PHOTO
+// Staff upload a photo of the completed repair. This marks the report
+// Resolved (starting the 24h move to History) and notifies the resident.
+// Uploading again replaces the previous photo.
+// ======================================
+app.post("/reports/:id/after-image", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
+    const { id } = req.params;
+
+    const parsedImage = parseImageDataUrl(req.body.image);
+    if (!parsedImage) {
+        return res.status(400).json({ message: "Please attach a JPEG or PNG photo of the completed repair." });
+    }
+
+    let newImageUrl = null;
+
+    try {
+        const existing = await pool.query(
+            "SELECT status, after_image, is_archived FROM Reports WHERE id = $1",
+            [id]
+        );
+
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ message: "Report not found" });
+        }
+
+        const before = existing.rows[0];
+        if (before.is_archived) {
+            return res.status(409).json({ message: "This report has already been archived and can't be changed." });
+        }
+
+        newImageUrl = await saveImage(parsedImage, "repairs");
+
+        const result = await pool.query(
+            `UPDATE Reports
+             SET after_image = $1,
+                 after_image_at = NOW(),
+                 status = 'Resolved',
+                 resolved_at = COALESCE(resolved_at, NOW())
+             WHERE id = $2
+             RETURNING id, user_id, description, status, after_image, after_image_at`,
+            [newImageUrl, id]
+        );
+        newImageUrl = null; // now referenced by the DB — must not be cleaned up below
+
+        const report = result.rows[0];
+
+        if (before.after_image) {
+            await deleteImage(before.after_image);
+        }
+
+        if (before.status !== "Resolved") {
+            await createNotification(
+                "report_status",
+                report.id,
+                "Your report has been fixed",
+                `The municipality uploaded a photo of the completed repair: "${truncate(report.description, 80)}". It will move to your History within 24 hours.`,
+                report.user_id
+            );
+        }
+
+        res.json({
+            message: before.status === "Resolved"
+                ? "After-repair photo updated."
+                : "After-repair photo saved and report marked as Resolved.",
+            report: {
+                id: report.id,
+                status: report.status,
+                after_image: report.after_image,
+                after_image_at: report.after_image_at
+            }
+        });
+
+    } catch (err) {
+        console.log(err);
+        if (newImageUrl) await deleteImage(newImageUrl);
         res.status(500).json({ message: "Server error" });
     }
 });
@@ -799,7 +1040,12 @@ app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"),
 // ======================================
 // GET USER PROFILE
 // ======================================
-app.get("/user/:id", async (req, res) => {
+app.get("/user/:id", requireAuth, async (req, res) => {
+    const isStaff = ["municipal_worker", "supervisor", "admin"].includes(req.user.role);
+    if (!isStaff && String(req.user.id) !== String(req.params.id)) {
+        return res.status(403).json({ message: "You can only view your own profile" });
+    }
+
     try {
         const result = await pool.query(
             "SELECT id, first_name, last_name, email, phone, profile_picture FROM Users WHERE id = $1",
@@ -849,9 +1095,21 @@ app.post("/update-profile", requireAuth, async (req, res) => {
         return res.status(400).json({ message: "Invalid South African phone number" });
     }
 
+    // profile_picture can be:
+    //   undefined          -> leave the picture alone
+    //   null / ""          -> remove the picture
+    //   a data URL         -> new upload, saved to /uploads/profiles
+    //   the current URL    -> unchanged (the profile page re-sends it)
+    const parsedPicture = profile_picture ? parseImageDataUrl(profile_picture) : null;
+    if (profile_picture && !parsedPicture && !isStoredImageUrl(profile_picture)) {
+        return res.status(400).json({ message: "Invalid profile picture format" });
+    }
+
+    let newPictureUrl = null;
+
     try {
         const oldResult = await pool.query(
-            "SELECT email, phone FROM Users WHERE id = $1",
+            "SELECT email, phone, profile_picture FROM Users WHERE id = $1",
             [id]
         );
 
@@ -860,15 +1118,28 @@ app.post("/update-profile", requireAuth, async (req, res) => {
         }
 
         const oldPhone = oldResult.rows[0].phone;
+        const oldPicture = oldResult.rows[0].profile_picture;
+
+        if (profile_picture && !parsedPicture && profile_picture !== oldPicture) {
+            return res.status(400).json({ message: "Invalid profile picture format" });
+        }
 
         const fields = ["phone = $1"];
         const values = [phone || null];
         let paramIndex = 2;
 
-        if (profile_picture !== undefined) {
+        let pictureChanged = false;
+        if (parsedPicture) {
+            newPictureUrl = await saveImage(parsedPicture, "profiles");
             fields.push(`profile_picture = $${paramIndex}`);
-            values.push(profile_picture);
+            values.push(newPictureUrl);
             paramIndex++;
+            pictureChanged = true;
+        } else if (profile_picture === null || profile_picture === "") {
+            fields.push(`profile_picture = $${paramIndex}`);
+            values.push(null);
+            paramIndex++;
+            pictureChanged = true;
         }
 
         values.push(id);
@@ -876,6 +1147,11 @@ app.post("/update-profile", requireAuth, async (req, res) => {
             `UPDATE Users SET ${fields.join(", ")} WHERE id = $${paramIndex}`,
             values
         );
+        newPictureUrl = null; // now referenced by the DB — must not be cleaned up below
+
+        if (pictureChanged && oldPicture) {
+            await deleteImage(oldPicture);
+        }
 
         if (oldPhone !== phone) {
             const timeStr = new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' });
@@ -905,6 +1181,7 @@ app.post("/update-profile", requireAuth, async (req, res) => {
 
     } catch (err) {
         console.log(err);
+        if (newPictureUrl) await deleteImage(newPictureUrl);
         res.status(500).json({ message: "Server error" });
     }
 });
@@ -1002,8 +1279,6 @@ app.patch("/feedback/:id/read", requireAuth, requireRole("municipal_worker", "su
     }
 });
 
-// Reply to a piece of feedback (municipal staff only). Notifies the
-// community member who submitted it via a personal notification.
 app.patch("/feedback/:id/reply", requireAuth, requireRole("municipal_worker", "supervisor"), async (req, res) => {
     const { id } = req.params;
     const reply = (req.body.reply || "").trim();
@@ -1105,8 +1380,6 @@ app.patch("/notifications/mark-all-read", requireAuth, requireRole("municipal_wo
 
 // ======================================
 // NOTIFICATIONS — personal inbox for community members
-// Every query is scoped to req.user.id, so a citizen can only ever
-// see or mark their own notifications (e.g. a reply to their feedback).
 // ======================================
 
 app.get("/my-notifications", requireAuth, async (req, res) => {
@@ -1354,9 +1627,19 @@ app.post("/change-password", requireAuth, async (req, res) => {
     }
 });
 
+// Fallback: send index.html for any non-API route so the frontend's
+// client-side navigation / direct links work (safe no-op if you don't
+// have an index.html in /public).
+app.get(/^(?!\/(register|login|forgot-password|verify-code|reset-password|submit-report|my-reports|reports|admin|user|update-profile|feedback|notifications|my-notifications|profile|change-password|api|uploads)).*/, (req, res, next) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"), err => {
+        if (err) next();
+    });
+});
+
 // ======================================
 // START SERVER
 // ======================================
-app.listen(3000, () => {
-    console.log("🚀 Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
 });

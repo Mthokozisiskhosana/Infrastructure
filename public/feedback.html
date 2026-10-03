@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Feedback</title>
@@ -206,9 +208,9 @@
     <a href="profile.html" class="nav-item">👤<br>PROFILE</a>
 </div>
 
+    <script src="api-config.js"></script>
     <script src="script.js"></script>
     <script>
-        const API_BASE = "http://localhost:3000";
 
         document.getElementById('messageInput').addEventListener('input', function() {
             document.getElementById('charCount').textContent = this.value.length;
@@ -354,8 +356,7 @@
         window.addEventListener('load', () => {
             const user = getCurrentUser();
             if (!user) {
-                alert('You need to log in first.');
-                window.location.href = 'login.html';
+                handleUnauthorized(); // script.js already showed the login message
                 return;
             }
 

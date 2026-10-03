@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .history-summary {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .history-stat {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 8px;
+            text-align: center;
+        }
+        .history-stat .count {
+            display: block;
+            font-size: 22px;
+            font-weight: bold;
+            color: #047857;
+        }
+        .history-stat .label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .history-intro {
+            font-size: 12.5px;
+            color: #64748b;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+        .history-item {
+            cursor: default;
+        }
+        .history-dates {
+            font-size: 11.5px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .history-duration {
+            display: inline-block;
+            margin-top: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #047857;
+            background: #d1fae5;
+            border-radius: 999px;
+            padding: 2px 8px;
+        }
+        .history-after {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #047857;
+        }
+        .history-after img {
+            width: 56px;
+            height: 56px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 2px solid #a7f3d0;
+        }
+        .header div:last-child {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <div class="header">
+        <a href="home.html" id="Menu">←</a>
+        <div>History</div>
+        <div onclick="openSidebar()">👤</div>
+    </div>
+
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar">
+        <span class="sidebar-close" onclick="closeSidebar()">&times;</span>
+
+        <div class="sidebar-header">
+            <div class="sidebar-avatar" id="sidebarAvatar">👤</div>
+            <div>
+                <div class="sidebar-name" id="sidebarName">Community Member</div>
+                <div class="sidebar-subtext">CIRIS Account</div>
+            </div>
+        </div>
+
+        <div class="sidebar-nav">
+            <p onclick="goToProfile()">👤 Profile</p>
+            <p onclick="window.location.href='feedback.html'">💬 Feedback</p>
+            <p onclick="window.location.href='notifications.html'">🔔 Notifications</p>
+        </div>
+
+        <div class="sidebar-footer">
+            <p onclick="logout()">🚪 Logout</p>
+        </div>
+    </div>
+
+    <div id="overlay" class="overlay" onclick="closeSidebar()"></div>
+
+    <!-- CONTENT -->
+    <div class="app-container">
+
+        <div class="history-summary">
+            <div class="history-stat">
+                <span class="count" id="countResolved">0</span>
+                <div class="label">Issues Fixed</div>
+            </div>
+            <div class="history-stat">
+                <span class="count" id="avgDays">–</span>
+                <div class="label">Avg. Days to Fix</div>
+            </div>
+        </div>
+
+        <div class="history-intro">
+            Reports the municipality has resolved are moved here 24 hours after they're fixed.
+        </div>
+
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="historySearch" placeholder="Search by ticket, description, street, or category…" oninput="filterHistory()">
+        </div>
+
+        <div id="historyContent">
+            <div class="loading-spinner">Loading history...</div>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div id="bottom-tab">
+        <a href="home.html" class="nav-item">🏠<br>HOME</a>
+        <a href="report.html" class="nav-item">
+            📄<br>REPORTS
+            <span class="nav-badge" id="reportsBadge" style="display:none;"></span>
+        </a>
+        <a href="dash.html" class="nav-item nav-fab">
+            <span class="nav-fab-circle">+</span>
+            <span class="nav-fab-label">Report</span>
+        </a>
+        <a href="history.html" class="nav-item">🕘<br>HISTORY</a>
+        <a href="profile.html" class="nav-item">👤<br>PROFILE</a>
+    </div>
+
+    <script src="api-config.js"></script>
+    <script src="script.js"></script>
+    <script>
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        const SAFE_IMAGE = /^\/uploads\/reports\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+        const SAFE_REPAIR_IMAGE = /^\/uploads\/repairs\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+
+        let historyReports = [];
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Unknown date';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return 'Unknown date';
+            return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        // Same ticket format as home.html so residents see one ID per report.
+        function ticketNumber(r) {
+            const year = r.date ? new Date(r.date).getFullYear() : new Date().getFullYear();
+            return `CIRIS-${year}-${String(r.id).padStart(4, '0')}`;
+        }
+
+        function daysToFix(r) {
+            if (!r.date || !r.resolved_at) return null;
+            const diff = new Date(r.resolved_at) - new Date(r.date);
+            if (isNaN(diff) || diff < 0) return null;
+            return diff / MS_PER_DAY;
+        }
+
+        function durationLabel(days) {
+            if (days === null) return '';
+            if (days < 1) return 'Fixed within a day';
+            const rounded = Math.round(days);
+            return `Fixed in ${rounded} day${rounded === 1 ? '' : 's'}`;
+        }
+
+        function renderHistoryRow(r) {
+            const days = daysToFix(r);
+            const category = r.ai_category ? escapeHtml(r.ai_category) : '';
+
+            return `
+                <div class="report-item history-item">
+                    ${SAFE_IMAGE.test(r.image || '')
+                        ? `<img class="thumb" src="${assetUrl(r.image)}" alt="Report photo">`
+                        : `<div class="report-icon" style="background:#d1fae5;">✅</div>`
+                    }
+                    <div class="report-content">
+                        <div class="report-ticket">${escapeHtml(ticketNumber(r))}</div>
+                        <div class="report-title">${escapeHtml(r.description) || 'No description'}</div>
+                        <div class="report-meta">
+                            ${category}${category && r.location ? ' · ' : ''}${r.location ? '📍 ' + escapeHtml(r.location) : ''}
+                        </div>
+                        <div class="history-dates">
+                            Reported ${formatDate(r.date)} · Resolved ${formatDate(r.resolved_at)}
+                        </div>
+                        ${days !== null ? `<span class="history-duration">${durationLabel(days)}</span>` : ''}
+                        ${SAFE_REPAIR_IMAGE.test(r.after_image || '') ? `
+                            <div class="history-after">
+                                <a href="${assetUrl(r.after_image)}" target="_blank" rel="noopener"><img src="${assetUrl(r.after_image)}" alt="After repair"></a>
+                                <span>📸 After repair</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="status-pill" style="background:#d1fae5; color:#047857;">✅ Resolved</div>
+                </div>
+            `;
+        }
+
+        function renderHistoryList(list) {
+            const container = document.getElementById('historyContent');
+
+            if (list.length === 0) {
+                const searching = document.getElementById('historySearch').value.trim() !== '';
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 32px; margin-bottom: 8px;">${searching ? '🔎' : '🕘'}</div>
+                        ${searching
+                            ? 'No past reports match your search.'
+                            : 'No past reports yet.<br>Resolved reports will appear here.'}
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = list.map(renderHistoryRow).join('');
+        }
+
+        function renderSummary() {
+            document.getElementById('countResolved').textContent = historyReports.length;
+
+            const durations = historyReports.map(daysToFix).filter(d => d !== null);
+            const avgEl = document.getElementById('avgDays');
+            if (durations.length === 0) {
+                avgEl.textContent = '–';
+            } else {
+                const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+                avgEl.textContent = avg < 1 ? '<1' : avg.toFixed(1);
+            }
+        }
+
+        function filterHistory() {
+            const q = document.getElementById('historySearch').value.trim().toLowerCase();
+            if (!q) {
+                renderHistoryList(historyReports);
+                return;
+            }
+            renderHistoryList(historyReports.filter(r =>
+                ticketNumber(r).toLowerCase().includes(q) ||
+                (r.description || '').toLowerCase().includes(q) ||
+                (r.location || '').toLowerCase().includes(q) ||
+                (r.ai_category || '').toLowerCase().includes(q)
+            ));
+        }
+
+        async function loadHistory() {
+            const user = getCurrentUser();
+            if (!user) {
+                handleUnauthorized();
+                return;
+            }
+
+            const nameEl = document.getElementById('sidebarName');
+            if (nameEl) {
+                nameEl.textContent = user.first_name
+                    ? `${user.first_name} ${user.last_name || ''}`.trim()
+                    : (user.email || 'Community Member');
+            }
+            updateSidebarAvatar(user);
+
+            const container = document.getElementById('historyContent');
+
+            try {
+                const res = await fetch(`${API_BASE}/my-reports/${user.id}?archived=true`, {
+                    headers: authHeaders()
+                });
+
+                if (res.status === 401 || res.status === 403) {
+                    handleUnauthorized();
+                    return;
+                }
+                if (!res.ok) throw new Error('Failed to fetch history');
+
+                const reports = await res.json();
+                if (!Array.isArray(reports)) throw new Error('Invalid data format');
+
+                // Most recently resolved first
+                historyReports = reports.sort((a, b) =>
+                    new Date(b.resolved_at || b.date) - new Date(a.resolved_at || a.date)
+                );
+
+                renderSummary();
+                renderHistoryList(historyReports);
+
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = `
+                    <div class="empty-state" style="color:#c33;">
+                        Could not load your history.<br>Please check your connection.
+                    </div>
+                `;
+            }
+        }
+
+        window.addEventListener('load', loadHistory);
+    </script>
+</body>
+</html>

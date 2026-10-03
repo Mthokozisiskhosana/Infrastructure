@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notifications</title>
@@ -91,6 +93,7 @@
             flex-shrink: 0;
         }
         .notif-item:not(.unread) .notif-dot { visibility: hidden; }
+        .notif-photos { max-width: 320px; margin-bottom: 2px; }
 
         .empty-state {
             text-align: center;
@@ -160,9 +163,9 @@
         <a href="profile.html" class="nav-item">👤<br>PROFILE</a>
     </div>
 
+    <script src="api-config.js"></script>
     <script src="script.js"></script>
     <script>
-        const API_BASE = "http://localhost:3000";
         let notifications = [];
 
         function escapeHtml(text) {
@@ -181,12 +184,27 @@
         }
 
         // Maps a notification's type to how it looks and where it links.
-        // Right now the only personal type is "feedback_reply", but this
-        // stays generic in case more personal notification types are
-        // added later.
+        // Personal types: "feedback_reply" and "report_status" (sent when
+        // the municipality changes the status of one of your reports).
+        // Report id -> { after_image, archived }, so status notifications
+        // can show the repair photo and link to the right page.
+        let reportsById = {};
+
         function notifPresentation(n) {
             if (n.type === 'feedback_reply') {
                 return { icon: '💬', linkText: 'View Feedback ↗', url: 'feedback.html' };
+            }
+            if (n.type === 'report_status') {
+                const title = (n.title || '').toLowerCase();
+                const icon = (title.includes('resolved') || title.includes('fixed')) ? '✅'
+                           : title.includes('assigned') ? '🧑‍🔧'
+                           : title.includes('review') ? '🔍'
+                           : '📋';
+                const report = reportsById[n.related_id];
+                if (report && report.archived) {
+                    return { icon, linkText: 'View in History ↗', url: 'history.html', report };
+                }
+                return { icon, linkText: 'Track My Reports ↗', url: 'report.html', report };
             }
             return { icon: '🔔', linkText: 'View ↗', url: 'home.html' };
         }
@@ -212,6 +230,12 @@
                                 <span class="notif-date">${formatDateTime(n.date)}</span>
                             </div>
                             <div class="notif-message">${escapeHtml(n.message)}</div>
+                            ${p.report && isUploadedPhoto(p.report.after_image) ? `
+                                <div class="report-photos notif-photos" onclick="event.stopPropagation();">
+                                    ${isUploadedPhoto(p.report.image) ? photoTile(p.report.image, "Your photo") : ''}
+                                    ${photoTile(p.report.after_image, "After repair", true)}
+                                </div>
+                            ` : ''}
                             <a href="${p.url}" class="notif-link" onclick="event.stopPropagation();">${p.linkText}</a>
                         </div>
                     </div>
@@ -225,6 +249,23 @@
             const btn = document.getElementById('markAllBtn');
             if (!btn) return;
             btn.disabled = !notifications.some(n => !n.is_read);
+        }
+
+        async function loadReportPhotos() {
+            const user = getCurrentUser();
+            if (!user || !notifications.some(n => n.type === 'report_status')) return;
+
+            reportsById = {};
+            try {
+                const [active, archived] = await Promise.all(['false', 'true'].map(a =>
+                    fetch(`${API_BASE}/my-reports/${user.id}?archived=${a}`, { headers: authHeaders() })
+                        .then(r => r.ok ? r.json() : [])
+                ));
+                (Array.isArray(active) ? active : []).forEach(r => reportsById[r.id] = { ...r, archived: false });
+                (Array.isArray(archived) ? archived : []).forEach(r => reportsById[r.id] = { ...r, archived: true });
+            } catch (err) {
+                console.error('Could not load report photos:', err); // notifications still show, just without photos
+            }
         }
 
         async function loadNotifications() {
@@ -242,6 +283,7 @@
 
                 const items = await res.json();
                 notifications = Array.isArray(items) ? items : [];
+                await loadReportPhotos();
                 renderNotifications();
 
             } catch (err) {
@@ -286,8 +328,7 @@
         window.addEventListener('load', () => {
             const user = getCurrentUser();
             if (!user) {
-                alert('You need to log in first.');
-                window.location.href = 'login.html';
+                handleUnauthorized(); // script.js already showed the login message
                 return;
             }
 

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CIRIS — Report Details</title>
@@ -221,6 +223,41 @@
   .toast.show { display: block; }
   .toast-success { background: var(--resolved-bg); color: var(--resolved); }
   .toast-error { background: #fef2f2; color: #b91c1c; }
+
+  /* Right-hand column: status card + after-repair card stacked */
+  .side-column { display: flex; flex-direction: column; gap: 20px; }
+
+  .photo-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .after-hint {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .after-meta {
+    font-size: 12px;
+    color: var(--muted);
+    margin: -10px 0 16px;
+  }
+  .after-preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 13px;
+    border: 2px dashed var(--border);
+  }
+  .after-preview-new {
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
+  }
 </style>
 </head>
 <body>
@@ -250,6 +287,8 @@
   </div>
 </main>
 
+<script src="api-config.js"></script>
+<script src="image-utils.js"></script>
 <script src="municipal.js"></script>
 <script>
     const params = new URLSearchParams(window.location.search);
@@ -308,8 +347,9 @@
         container.innerHTML = `
             <div class="content-grid">
                 <div class="card">
+                    <div class="photo-label">Before — submitted by resident</div>
                     ${r.image
-                        ? `<img class="report-image" src="${r.image}">`
+                        ? `<img class="report-image" src="${assetUrl(r.image)}" alt="Reported problem">`
                         : `<div class="report-image"></div>`
                     }
                     <div class="field-label">Report ID</div>
@@ -342,19 +382,143 @@
                     `}
                 </div>
 
-                <div class="card">
-                    <h2>Update Status</h2>
-                    <select id="statusSelect">
-                        ${statuses.map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
-                    </select>
-                    <div class="btn-row">
-                        <button class="btn btn-cancel" onclick="window.location.href='municipal-dashboard.html'">Cancel</button>
-                        <button class="btn btn-save" id="saveBtn" onclick="saveStatus(${r.id})">Save Changes</button>
+                <div class="side-column">
+                    <div class="card">
+                        <h2>Update Status</h2>
+                        <select id="statusSelect">
+                            ${statuses.map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
+                        </select>
+                        <div class="btn-row">
+                            <button class="btn btn-cancel" onclick="window.location.href='municipal-dashboard.html'">Cancel</button>
+                            <button class="btn btn-save" id="saveBtn" onclick="saveStatus(${r.id})">Save Changes</button>
+                        </div>
+                        <div class="toast" id="toast"></div>
                     </div>
-                    <div class="toast" id="toast"></div>
+
+                    ${renderAfterRepairCard(r)}
                 </div>
             </div>
         `;
+    }
+
+    // ---------- After-repair photo ----------
+    let afterImageData = "";
+
+    function renderAfterRepairCard(r) {
+        const resolved = r.status === 'Resolved';
+        const locked = r.is_archived;
+
+        return `
+            <div class="card">
+                <h2>After-Repair Photo</h2>
+                ${r.after_image ? `
+                    <img class="report-image" id="afterPreview" src="${assetUrl(r.after_image)}" alt="Completed repair">
+                    <div class="after-meta">Uploaded ${formatDateTime(r.after_image_at)}</div>
+                ` : `
+                    <p class="after-hint">
+                        Once the repair is done, upload a photo of the fixed problem.
+                        Submitting it marks this report as <strong>Resolved</strong> and notifies the resident.
+                    </p>
+                    <div class="report-image after-preview-empty" id="afterPreview">No photo yet</div>
+                `}
+                ${locked ? `
+                    <p class="after-hint">This report has been archived, so the photo can no longer be changed.</p>
+                ` : `
+                    <input type="file" id="afterInput" accept="image/*" hidden onchange="previewAfterImage(this)">
+                    <div class="btn-row">
+                        <button class="btn btn-cancel" onclick="document.getElementById('afterInput').click()">
+                            ${r.after_image ? '🔄 Replace photo' : '📷 Choose photo'}
+                        </button>
+                        <button class="btn btn-save" id="afterBtn" disabled onclick="submitAfterImage(${r.id})">
+                            ${resolved ? 'Save photo' : 'Submit & mark Resolved'}
+                        </button>
+                    </div>
+                `}
+                <div class="toast" id="afterToast"></div>
+            </div>
+        `;
+    }
+
+    async function previewAfterImage(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const btn = document.getElementById('afterBtn');
+        const toast = document.getElementById('afterToast');
+        toast.classList.remove('show');
+
+        try {
+            afterImageData = await compressImage(file);
+        } catch (err) {
+            afterImageData = "";
+            btn.disabled = true;
+            toast.textContent = 'Could not read that image. Please choose a JPEG or PNG photo.';
+            toast.className = 'toast show toast-error';
+            return;
+        }
+
+        // Swap the placeholder/old photo for the new preview
+        const old = document.getElementById('afterPreview');
+        const img = document.createElement('img');
+        img.className = 'report-image after-preview-new';
+        img.id = 'afterPreview';
+        img.alt = 'New after-repair photo (not saved yet)';
+        img.src = afterImageData;
+        old.replaceWith(img);
+
+        btn.disabled = false;
+        input.value = ''; // allow picking the same file again
+    }
+
+    async function submitAfterImage(id) {
+        if (!afterImageData) return;
+
+        const btn = document.getElementById('afterBtn');
+        const toast = document.getElementById('afterToast');
+        const label = btn.textContent;
+
+        btn.disabled = true;
+        btn.textContent = 'Uploading...';
+        toast.classList.remove('show');
+
+        try {
+            const res = await fetch(`${API_BASE}/reports/${id}/after-image`, {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify({ image: afterImageData })
+            });
+            const data = await readJsonSafely(res);
+
+            if (res.status === 401 || res.status === 403) {
+                window.location.href = 'municipal-login.html';
+                return;
+            }
+            if (!res.ok || !data) {
+                // A 404 with no JSON means the running server predates this
+                // feature (server.js changes only load on restart).
+                const fallback = (res.status === 404 && !data)
+                    ? 'The server doesn\'t support photo uploads yet — please restart it (stop it, then run npm start) and try again.'
+                    : 'Could not upload the photo.';
+                toast.textContent = (data && data.message) || fallback;
+                toast.className = 'toast show toast-error';
+                btn.disabled = false;
+                btn.textContent = label;
+                return;
+            }
+
+            afterImageData = "";
+            await loadReportDetail(); // re-render with the saved photo + new status
+            const freshToast = document.getElementById('afterToast');
+            freshToast.textContent = data.message;
+            freshToast.className = 'toast show toast-success';
+
+        } catch (err) {
+            console.error(err);
+            toast.textContent = 'Could not connect to server.';
+            toast.className = 'toast show toast-error';
+            btn.disabled = false;
+            btn.textContent = label;
+        }
     }
 
     async function saveStatus(id) {

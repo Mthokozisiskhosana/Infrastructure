@@ -1,0 +1,23 @@
+# Secrets (database password, JWT secret, email login) — never commit.
+# Copy .env.example to .env and fill in your own values.
+.env
+
+# Dependencies — reinstall with `npm install`
+node_modules/
+
+# Residents' uploaded photos and image backups — personal data (POPIA)
+uploads/
+backups/
+
+# Unused files kept locally only (not part of the app)
+public/ds.html
+public/pass.html
+public/reset-password.html
+public/status.html
+components/
+Images/
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+desktop.ini
