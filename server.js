@@ -6,7 +6,7 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const { createMailer } = require("./mailer");
 const { validatePasswordStrength } = require("./passwordPolicy");
 const {
     createLoginSecurity,
@@ -168,16 +168,10 @@ pool.connect()
 
 // ======================================
 // EMAIL TRANSPORT
+// Brevo's web API when BREVO_API_KEY is set (deployed), otherwise SMTP —
+// see mailer.js. Same sendMail({ from, to, subject, html }) either way.
 // ======================================
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-    }
-});
+const transporter = createMailer();
 
 function generateOtp() {
     return crypto.randomInt(0, 1000000).toString().padStart(6, "0");

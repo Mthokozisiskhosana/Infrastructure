@@ -38,7 +38,16 @@ services:
       - key: APP_URL
         sync: false
 
-      # Email (password-reset codes, staff invites, security alerts)
+      # Email via Brevo's web API (works on Render's free plan, where SMTP
+      # ports may be blocked). Brevo -> SMTP & API -> API Keys.
+      - key: BREVO_API_KEY
+        sync: false
+      # Sender shown on emails — must be verified in Brevo -> Senders, e.g.
+      # "CIRIS Community Portal <your-address@gmail.com>"
+      - key: BREVO_SENDER
+        sync: false
+
+      # Email via SMTP — only used when BREVO_API_KEY is empty
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
