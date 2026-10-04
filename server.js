@@ -452,7 +452,18 @@ app.post("/forgot-password", async (req, res) => {
             [hashOtp(code), expiry, email]
         );
 
-        await sendResetCodeEmail(email, code);
+        try {
+            await sendResetCodeEmail(email, code);
+        } catch (mailErr) {
+            // Cancel the unsent code so the resend cooldown doesn't silently
+            // swallow the next attempt, and say plainly that email failed.
+            console.log(`[reset] Could not send reset code to ${email}:`, mailErr.message);
+            await pool.query(
+                "UPDATE Users SET reset_token = NULL, reset_token_expiry = NULL WHERE email = $1",
+                [email]
+            );
+            return res.status(503).json({ message: "We couldn't send the email right now. Please try again in a few minutes." });
+        }
 
         res.json(genericResponse);
 
