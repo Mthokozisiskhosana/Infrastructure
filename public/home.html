@@ -224,10 +224,8 @@
     }
 
     function escapeHtml(text) {
-        if (typeof text !== 'string') return text;
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        // Also escapes quotes, so the result is safe inside attributes too
+        return String(text ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
     function ticketNumber(r, index) {
@@ -243,7 +241,7 @@
         const category = escapeHtml(r.category || r.description || 'Report');
 
         return `
-            <div class="report-item" data-search="${ticket.toLowerCase()} ${(r.location || '').toLowerCase()} ${(r.category || '').toLowerCase()}">
+            <div class="report-item" data-search="${ticket.toLowerCase()} ${escapeHtml((r.location || '').toLowerCase())} ${escapeHtml((r.category || '').toLowerCase())}">
                 ${r.image
                     ? `<img class="thumb" src="${assetUrl(r.image)}">`
                     : `<div class="report-icon" style="background:${style.bg};">${style.icon}</div>`

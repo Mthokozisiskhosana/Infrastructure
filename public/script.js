@@ -134,9 +134,8 @@ function updateSidebarAvatar(user) {
 }
 
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str ?? '';
-    return div.innerHTML;
+    // Also escapes quotes, so the result is safe inside attributes too
+    return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function getReportsKey() {

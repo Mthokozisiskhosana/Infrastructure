@@ -205,6 +205,8 @@
                     <div id="emailStep1">
                         <label style="margin-top:0;">New email address</label>
                         <input type="email" id="newEmailInput" placeholder="you@gmail.com">
+                        <label>Current password</label>
+                        <input type="password" id="emailPasswordInput" placeholder="To confirm it's you" autocomplete="current-password">
                         <button type="button" class="btn-save" style="margin-top:8px;" onclick="requestEmailChange()">Send verification code</button>
                     </div>
 
@@ -407,12 +409,17 @@
                 showError('Please enter a new email address.');
                 return;
             }
+            const currentPassword = document.getElementById('emailPasswordInput').value;
+            if (!currentPassword) {
+                showError('Please enter your current password.');
+                return;
+            }
 
             try {
                 const res = await fetch(`${API_BASE}/profile/request-email-change`, {
                     method: 'POST',
                     headers: authHeaders(),
-                    body: JSON.stringify({ newEmail })
+                    body: JSON.stringify({ newEmail, currentPassword })
                 });
                 const data = await res.json();
 
@@ -421,6 +428,7 @@
                     return;
                 }
 
+                document.getElementById('emailPasswordInput').value = '';
                 document.getElementById('pendingEmailDisplay').textContent = newEmail;
                 document.getElementById('emailStep1').style.display = 'none';
                 document.getElementById('emailStep2').style.display = 'block';

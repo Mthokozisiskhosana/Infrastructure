@@ -194,6 +194,10 @@
   .pill-pending  { color: var(--received); background: var(--received-bg); }
   .pill-worker   { color: var(--review); background: var(--review-bg); }
   .pill-super    { color: var(--assigned); background: var(--assigned-bg); }
+  .pill-inactive { color: var(--muted); background: #f1f5f9; }
+  tr.inactive td { color: var(--muted); }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .actions .btn-outline { white-space: nowrap; }
 
   .empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 14px; }
 
@@ -305,7 +309,7 @@
           <th>Phone</th>
           <th>Role</th>
           <th>Status</th>
-          <th>Password</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody id="staffBody">
@@ -345,7 +349,21 @@
     function resetBlockedReason(s) {
         if (s.id === me.id) return 'Use “Forgot password” on the sign-in page to change your own password';
         if (s.role === 'supervisor' && me.role !== 'admin') return 'Only an administrator can reset a supervisor’s password';
+        if (!s.is_active) return 'Reactivate this account first';
         return '';
+    }
+
+    // Same rule for deactivating / reactivating.
+    function activeBlockedReason(s) {
+        if (s.id === me.id) return 'You can’t deactivate your own account';
+        if (s.role === 'supervisor' && me.role !== 'admin') return 'Only an administrator can deactivate a supervisor';
+        return '';
+    }
+
+    function statusPill(s) {
+        if (!s.is_active) return '<span class="pill pill-inactive" title="Can’t sign in">Deactivated</span>';
+        if (s.must_change_password) return '<span class="pill pill-pending" title="Signs in with a temporary password and must choose a new one">Must set new password</span>';
+        return '<span class="pill pill-active">Active</span>';
     }
 
     async function loadStaff() {
@@ -363,22 +381,27 @@
 
             tbody.innerHTML = staff.map(s => {
                 const blocked = resetBlockedReason(s);
+                const activeBlocked = activeBlockedReason(s);
+                const name = escapeHtml(s.first_name + ' ' + s.last_name);
                 return `
-                    <tr>
+                    <tr class="${s.is_active ? '' : 'inactive'}">
                         <td>${escapeHtml(s.first_name)} ${escapeHtml(s.last_name)}${s.id === me.id ? '<span class="you">(you)</span>' : ''}</td>
                         <td>${escapeHtml(s.email)}</td>
                         <td>${escapeHtml(s.phone)}</td>
                         <td>${roleLabel(s.role)}</td>
-                        <td>${s.must_change_password
-                            ? '<span class="pill pill-pending" title="Signs in with a temporary password and must choose a new one">Must set new password</span>'
-                            : '<span class="pill pill-active">Active</span>'}</td>
-                        <td>
+                        <td>${statusPill(s)}</td>
+                        <td><div class="actions">
                             <button class="btn btn-outline" ${blocked ? `disabled title="${escapeHtml(blocked)}"` : ''}
                                     onclick="resetPassword(${Number(s.id)}, this)"
-                                    data-name="${escapeHtml(s.first_name + ' ' + s.last_name)}">
+                                    data-name="${name}">
                                 🔑 Reset password
                             </button>
-                        </td>
+                            <button class="btn btn-outline" ${activeBlocked ? `disabled title="${escapeHtml(activeBlocked)}"` : ''}
+                                    onclick="setActive(${Number(s.id)}, ${s.is_active ? 'false' : 'true'}, this)"
+                                    data-name="${name}">
+                                ${s.is_active ? '⛔ Deactivate' : '✅ Reactivate'}
+                            </button>
+                        </div></td>
                     </tr>
                 `;
             }).join('');
@@ -409,6 +432,35 @@
             toast.className = 'toast show toast-error';
             btn.disabled = false;
             btn.textContent = '🔑 Reset password';
+        }
+    }
+
+    async function setActive(id, active, btn) {
+        const name = btn.dataset.name;
+        const question = active
+            ? `Reactivate ${name}'s account?\n\nThey'll be able to sign in again with their existing password.`
+            : `Deactivate ${name}'s account?\n\nThey'll be signed out straight away and won't be able to sign in. Their reports and replies stay on record, and you can reactivate the account later.`;
+        if (!confirm(question)) return;
+
+        const toast = document.getElementById('listToast');
+        toast.classList.remove('show');
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = active ? 'Reactivating...' : 'Deactivating...';
+
+        try {
+            const res = await fetch(`${API_BASE}/admin/staff/${id}/${active ? 'reactivate' : 'deactivate'}`, { method: 'POST', headers: authHeaders() });
+            const data = await readJsonSafely(res);
+            if (!res.ok || !data) throw new Error((data && data.message) || 'Could not update the account.');
+
+            toast.textContent = data.message;
+            toast.className = 'toast show';
+            loadStaff();
+        } catch (err) {
+            toast.textContent = err.message;
+            toast.className = 'toast show toast-error';
+            btn.disabled = false;
+            btn.textContent = label;
         }
     }
 

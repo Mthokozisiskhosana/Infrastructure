@@ -37,6 +37,43 @@ const app = express();
 if (process.env.RENDER || process.env.TRUST_PROXY === "true") {
     app.set("trust proxy", 1);
 }
+app.disable("x-powered-by");
+
+// Browser security headers on every response.
+// - The CSP only lets pages load from this site (plus report photos from
+//   Supabase), so injected markup can't pull in outside scripts or send
+//   data elsewhere. 'unsafe-inline' is needed because the pages use inline
+//   <script> blocks and onclick="..." handlers.
+// - frame-ancestors / X-Frame-Options stop other sites framing the app
+//   (clickjacking).
+const IMAGE_ORIGIN = USE_SUPABASE ? new URL(process.env.SUPABASE_URL).origin : "";
+const CONTENT_SECURITY_POLICY = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' data: blob: ${IMAGE_ORIGIN}`.trim(),
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'"
+].join("; ");
+
+app.use((req, res, next) => {
+    res.set({
+        "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(self), geolocation=(self), microphone=()"
+    });
+    if (req.secure) {
+        res.set("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+    }
+    next();
+});
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -84,15 +121,22 @@ if (!JWT_SECRET) {
     process.exit(1);
 }
 
+// "tv" is the user's token_version when the token was issued. Bumping
+// token_version (password change/reset, deactivation) cancels every token
+// issued before it, so a stolen login stops working straight away.
 function generateToken(user) {
     return jwt.sign(
-        { id: user.id, role: user.role },
+        { id: user.id, role: user.role, tv: user.token_version || 0 },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
     );
 }
 
-function requireAuth(req, res, next) {
+// Routes a user may still call while must_change_password is set (staff
+// signing in with a temporary password must choose their own first).
+const ALLOWED_BEFORE_PASSWORD_CHANGE = ["/change-password"];
+
+async function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
@@ -100,14 +144,121 @@ function requireAuth(req, res, next) {
         return res.status(401).json({ message: "Authentication required" });
     }
 
+    let payload;
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
-        req.user = { id: payload.id, role: payload.role };
-        next();
+        payload = jwt.verify(token, JWT_SECRET);
     } catch (err) {
         return res.status(401).json({ message: "Invalid or expired token" });
     }
+
+    // The token alone isn't trusted for long-lived facts: check the account
+    // still exists, is active, and hasn't had its password changed since.
+    // The role also comes from the database, so a role change applies at once.
+    try {
+        const result = await pool.query(
+            "SELECT role, token_version, is_active, must_change_password FROM Users WHERE id = $1",
+            [payload.id]
+        );
+        const account = result.rows[0];
+
+        if (!account || !account.is_active || account.token_version !== (payload.tv || 0)) {
+            return res.status(401).json({ message: "Your session has ended. Please sign in again." });
+        }
+        if (account.must_change_password && !ALLOWED_BEFORE_PASSWORD_CHANGE.includes(req.path)) {
+            return res.status(403).json({
+                message: "Please choose a new password before continuing.",
+                must_change_password: true
+            });
+        }
+
+        req.user = { id: payload.id, role: account.role };
+        next();
+    } catch (err) {
+        console.log("[auth] Could not check session:", err.message);
+        return res.status(500).json({ message: "Server error" });
+    }
 }
+
+/**
+ * Checks a signed-in user's current password before a sensitive change
+ * (email or password). Wrong guesses lock the check like logins do, so a
+ * stolen session can't be used to work out the password.
+ * Returns { ok: true, user } or { ok: false, status, body }.
+ */
+async function verifyCurrentPassword(userId, password) {
+    const key = `pwcheck:${userId}`;
+
+    const lockedFor = await loginSecurity.getLockSeconds([key]);
+    if (lockedFor > 0) {
+        return { ok: false, status: 429, body: { message: `Too many incorrect passwords. Please wait ${formatDuration(lockedFor)} and try again.` } };
+    }
+
+    const result = await pool.query("SELECT id, email, password FROM Users WHERE id = $1", [userId]);
+    const user = result.rows[0];
+    if (!user) {
+        return { ok: false, status: 404, body: { message: "User not found" } };
+    }
+
+    if (typeof password !== "string" || !(await bcrypt.compare(password, user.password))) {
+        const attempt = await loginSecurity.recordFailure(key, { limit: LOGIN_MAX_FAILURES, lockFor: loginLockSeconds });
+        if (attempt.lockedFor) {
+            return { ok: false, status: 429, body: { message: `Too many incorrect passwords. Please wait ${formatDuration(attempt.lockedFor)} and try again.` } };
+        }
+        return { ok: false, status: 401, body: { message: "Current password is incorrect" } };
+    }
+
+    await loginSecurity.clear(key);
+    return { ok: true, user };
+}
+
+// ======================================
+// RATE LIMITS
+// Caps how often one visitor (or signed-in user) can hit routes that
+// create things or send email, so nobody can flood the database, fill the
+// photo storage, or use up the daily email quota (Brevo free = 300/day,
+// shared by every reset code and staff invite). Counts are kept in memory:
+// a restart resets them, which is fine for stopping floods.
+// ======================================
+function rateLimit({ name, max, windowMinutes, by = "ip" }) {
+    const hits = new Map(); // key -> { count, resetAt }
+    const windowMs = windowMinutes * 60 * 1000;
+
+    setInterval(() => {
+        const now = Date.now();
+        for (const [key, entry] of hits) if (entry.resetAt <= now) hits.delete(key);
+    }, windowMs).unref();
+
+    return (req, res, next) => {
+        // "user" limits run after requireAuth; they fall back to the IP.
+        const key = by === "user" && req.user ? `user:${req.user.id}` : `ip:${req.ip}`;
+        const now = Date.now();
+        let entry = hits.get(key);
+        if (!entry || entry.resetAt <= now) {
+            entry = { count: 0, resetAt: now + windowMs };
+            hits.set(key, entry);
+        }
+        entry.count++;
+
+        if (entry.count > max) {
+            const seconds = Math.ceil((entry.resetAt - now) / 1000);
+            console.log(`[rate-limit] ${name}: ${key} blocked (${entry.count} requests)`);
+            res.set("Retry-After", String(seconds));
+            return res.status(429).json({
+                message: `You've done that too many times. Please try again in ${formatDuration(seconds)}.`,
+                retry_after: seconds
+            });
+        }
+        next();
+    };
+}
+
+const limitRegister      = rateLimit({ name: "register",       max: 5,  windowMinutes: 60 });
+const limitForgot        = rateLimit({ name: "forgot-password", max: 5,  windowMinutes: 15 });
+const limitCodeCheck     = rateLimit({ name: "code-check",     max: 30, windowMinutes: 15 });
+const limitReports       = rateLimit({ name: "submit-report",  max: 10, windowMinutes: 60, by: "user" });
+const limitFeedback      = rateLimit({ name: "feedback",       max: 10, windowMinutes: 60, by: "user" });
+const limitEmailChange   = rateLimit({ name: "email-change",   max: 3,  windowMinutes: 15, by: "user" });
+const limitStaffAccounts = rateLimit({ name: "staff-accounts", max: 20, windowMinutes: 60, by: "user" });
 
 function requireRole(...allowedRoles) {
     return (req, res, next) => {
@@ -149,11 +300,22 @@ const pool = process.env.DATABASE_URL
 
 const loginSecurity = createLoginSecurity(pool);
 
+// Columns added after the live database was created. Applied on startup
+// (same statements as Database/tables.sql) so a deploy needs no manual SQL.
+async function ensureSchema() {
+    await pool.query(`
+        ALTER TABLE Users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE Users ADD COLUMN IF NOT EXISTS is_active     BOOLEAN NOT NULL DEFAULT true;
+    `);
+}
+
 pool.connect()
     .then(client => {
         console.log("✅ Connected to PostgreSQL");
         client.release();
-        return loginSecurity.ensureTable().then(() => loginSecurity.startCleanup());
+        return ensureSchema()
+            .then(() => loginSecurity.ensureTable())
+            .then(() => loginSecurity.startCleanup());
     })
     .catch(err => {
         console.log("❌ DB Connection Failed:", err.message);
@@ -237,7 +399,7 @@ async function getUserDisplayName(userId) {
 // which text they agreed to.
 const POPIA_CONSENT_VERSION = "2026-10-v1";
 
-app.post("/register", async (req, res) => {
+app.post("/register", limitRegister, async (req, res) => {
     const { first_name, last_name, email, phone, password, popia_consent } = req.body;
 
     if (popia_consent !== true) {
@@ -342,7 +504,8 @@ app.post("/login", async (req, res) => {
         }
 
         const result = await pool.query(
-            `SELECT id, first_name, last_name, email, phone, password, role, must_change_password
+            `SELECT id, first_name, last_name, email, phone, password, role, must_change_password,
+                    token_version, is_active
              FROM Users
              WHERE email = $1`,
             [email]
@@ -387,6 +550,12 @@ app.post("/login", async (req, res) => {
         // 3. Success: forget this account's failures
         await loginSecurity.clear(accountKey);
 
+        // Checked only after the password matched, so it doesn't reveal
+        // anything to someone guessing.
+        if (!user.is_active) {
+            return res.status(403).json({ message: "This account has been deactivated. Please contact your supervisor." });
+        }
+
         const token = generateToken(user);
 
         res.json({
@@ -409,7 +578,7 @@ app.post("/login", async (req, res) => {
 // ======================================
 // FORGOT PASSWORD — STEP 1
 // ======================================
-app.post("/forgot-password", async (req, res) => {
+app.post("/forgot-password", limitForgot, async (req, res) => {
     const { email } = req.body;
     const genericResponse = { message: "If that email is registered, a verification code has been sent." };
 
@@ -419,11 +588,11 @@ app.post("/forgot-password", async (req, res) => {
 
     try {
         const checkUser = await pool.query(
-            "SELECT id, reset_token_expiry FROM Users WHERE email = $1",
+            "SELECT id, reset_token_expiry, is_active FROM Users WHERE email = $1",
             [email]
         );
 
-        if (checkUser.rows.length === 0) {
+        if (checkUser.rows.length === 0 || !checkUser.rows[0].is_active) {
             return res.json(genericResponse);
         }
 
@@ -520,7 +689,7 @@ async function checkResetCode(email, code) {
 // ======================================
 // FORGOT PASSWORD — STEP 2
 // ======================================
-app.post("/verify-code", async (req, res) => {
+app.post("/verify-code", limitCodeCheck, async (req, res) => {
     const { email, code } = req.body;
 
     if (!email || !code) {
@@ -544,7 +713,7 @@ app.post("/verify-code", async (req, res) => {
 // ======================================
 // FORGOT PASSWORD — STEP 3
 // ======================================
-app.post("/reset-password", async (req, res) => {
+app.post("/reset-password", limitCodeCheck, async (req, res) => {
     const { email, code, password } = req.body;
 
     if (!email || !code) {
@@ -567,7 +736,8 @@ app.post("/reset-password", async (req, res) => {
 
         await pool.query(
             `UPDATE Users
-             SET password = $1, reset_token = NULL, reset_token_expiry = NULL
+             SET password = $1, reset_token = NULL, reset_token_expiry = NULL,
+                 token_version = token_version + 1
              WHERE id = $2`,
             [passwordHash, user.id]
         );
@@ -636,15 +806,22 @@ async function archiveOldResolvedReports() {
 setInterval(archiveOldResolvedReports, ARCHIVE_CHECK_INTERVAL_MS);
 archiveOldResolvedReports();
 
-app.post("/submit-report", requireAuth, async (req, res) => {
+app.post("/submit-report", requireAuth, limitReports, async (req, res) => {
     const { user_id, description, image, location } = req.body;
 
     if (!user_id || !description) {
         return res.status(400).json({ message: "User ID and description are required" });
     }
 
-    if (req.user.role === "community_member" && req.user.id !== user_id) {
+    if (String(req.user.id) !== String(user_id)) {
         return res.status(403).json({ message: "You can only submit reports for your own account" });
+    }
+
+    if (typeof description !== "string" || description.length > 2000) {
+        return res.status(400).json({ message: "Description is too long (max 2000 characters)." });
+    }
+    if (location && (typeof location !== "string" || location.length > 100)) {
+        return res.status(400).json({ message: "Invalid location." });
     }
 
     const parsedImage = image ? parseImageDataUrl(image) : null;
@@ -1174,7 +1351,7 @@ async function sendStaffCredentialsEmail({ to, firstName, tempPassword, subject,
 app.get("/admin/staff", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT id, first_name, last_name, email, phone, role, must_change_password
+            `SELECT id, first_name, last_name, email, phone, role, must_change_password, is_active
              FROM Users
              WHERE role IN ('municipal_worker', 'supervisor')
              ORDER BY role DESC, first_name, last_name`
@@ -1195,26 +1372,44 @@ app.get("/admin/staff", requireAuth, requireRole("supervisor", "admin"), async (
 // admin, so one supervisor can't take over another's account. Residents
 // use the self-service "Forgot password" flow only.
 // ======================================
-app.post("/admin/staff/:id/reset-password", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+/**
+ * Loads a staff member the signed-in supervisor/admin may manage (reset
+ * password, deactivate). Supervisors manage municipal workers; managing a
+ * supervisor needs an admin; nobody manages their own account this way.
+ * Returns { target } or { status, message }.
+ */
+async function findManageableStaff(req, action) {
     const targetId = Number(req.params.id);
 
     if (targetId === req.user.id) {
-        return res.status(400).json({ message: "To change your own password, use “Forgot password” on the sign-in page." });
+        return { status: 400, message: `You can't ${action} your own account.` };
     }
 
-    try {
-        const result = await pool.query(
-            "SELECT id, first_name, last_name, email, role FROM Users WHERE id = $1",
-            [targetId]
-        );
-        const target = result.rows[0];
+    const result = await pool.query(
+        "SELECT id, first_name, last_name, email, role, is_active FROM Users WHERE id = $1",
+        [targetId]
+    );
+    const target = result.rows[0];
 
-        if (!target || !["municipal_worker", "supervisor"].includes(target.role)) {
-            return res.status(404).json({ message: "Staff member not found" });
+    if (!target || !["municipal_worker", "supervisor"].includes(target.role)) {
+        return { status: 404, message: "Staff member not found" };
+    }
+    if (target.role === "supervisor" && req.user.role !== "admin") {
+        return { status: 403, message: `Only an administrator can ${action} a supervisor.` };
+    }
+    return { target };
+}
+
+app.post("/admin/staff/:id/reset-password", requireAuth, requireRole("supervisor", "admin"), limitStaffAccounts, async (req, res) => {
+    try {
+        const found = await findManageableStaff(req, "reset the password of");
+        if (!found.target) {
+            const message = found.status === 400
+                ? "To change your own password, use “Forgot password” on the sign-in page."
+                : found.message;
+            return res.status(found.status).json({ message });
         }
-        if (target.role === "supervisor" && req.user.role !== "admin") {
-            return res.status(403).json({ message: "Only an administrator can reset a supervisor's password." });
-        }
+        const target = found.target;
 
         const tempPassword = generateTempPassword();
         const passwordHash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
@@ -1222,7 +1417,8 @@ app.post("/admin/staff/:id/reset-password", requireAuth, requireRole("supervisor
         await pool.query(
             `UPDATE Users
              SET password = $1, must_change_password = true,
-                 reset_token = NULL, reset_token_expiry = NULL
+                 reset_token = NULL, reset_token_expiry = NULL,
+                 token_version = token_version + 1
              WHERE id = $2`,
             [passwordHash, target.id]
         );
@@ -1252,7 +1448,44 @@ app.post("/admin/staff/:id/reset-password", requireAuth, requireRole("supervisor
     }
 });
 
-app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+// ======================================
+// DEACTIVATE / REACTIVATE A STAFF ACCOUNT
+// For staff who leave or shouldn't have access any more. The account and
+// its history stay (reports, replies keep their names); it just can't sign
+// in, and any open sessions end straight away (token_version bump).
+// ======================================
+async function setStaffActive(req, res, active) {
+    try {
+        const found = await findManageableStaff(req, active ? "reactivate" : "deactivate");
+        if (!found.target) {
+            return res.status(found.status).json({ message: found.message });
+        }
+        const target = found.target;
+
+        await pool.query(
+            `UPDATE Users
+             SET is_active = $1, token_version = token_version + 1
+             WHERE id = $2`,
+            [active, target.id]
+        );
+
+        console.log(`[staff] User #${req.user.id} ${active ? "reactivated" : "deactivated"} staff member #${target.id}`);
+
+        res.json({
+            message: active
+                ? `${target.first_name}'s account has been reactivated.`
+                : `${target.first_name}'s account has been deactivated and signed out.`
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+}
+
+app.post("/admin/staff/:id/deactivate", requireAuth, requireRole("supervisor", "admin"), (req, res) => setStaffActive(req, res, false));
+app.post("/admin/staff/:id/reactivate", requireAuth, requireRole("supervisor", "admin"), (req, res) => setStaffActive(req, res, true));
+
+app.post("/admin/create-staff", requireAuth, requireRole("supervisor", "admin"), limitStaffAccounts, async (req, res) => {
     const { first_name, last_name, email, phone, role } = req.body;
 
     const allowedStaffRoles = ["municipal_worker", "supervisor"];
@@ -1462,7 +1695,7 @@ app.post("/update-profile", requireAuth, async (req, res) => {
 // ======================================
 // FEEDBACK
 // ======================================
-app.post("/feedback", requireAuth, async (req, res) => {
+app.post("/feedback", requireAuth, limitFeedback, async (req, res) => {
     const message = (req.body.message || "").trim();
     if (!message) {
         return res.status(400).json({ message: "Please write a message before sending." });
@@ -1720,7 +1953,7 @@ function isValidEmailFormat(email) {
 // ======================================
 // REQUEST EMAIL CHANGE
 // ======================================
-app.post("/profile/request-email-change", requireAuth, async (req, res) => {
+app.post("/profile/request-email-change", requireAuth, limitEmailChange, async (req, res) => {
     const email = (req.body.newEmail || "").trim().toLowerCase();
 
     if (!isValidEmailFormat(email)) {
@@ -1734,6 +1967,13 @@ app.post("/profile/request-email-change", requireAuth, async (req, res) => {
     }
 
     try {
+        // A signed-in session isn't enough to move the account to another
+        // email (that, plus "Forgot password", would hand over the account).
+        const check = await verifyCurrentPassword(req.user.id, req.body.currentPassword);
+        if (!check.ok) {
+            return res.status(check.status).json(check.body);
+        }
+
         const taken = await pool.query(
             "SELECT id FROM Users WHERE email = $1 AND id != $2",
             [email, req.user.id]
@@ -1833,7 +2073,7 @@ app.post("/profile/confirm-email-change", requireAuth, async (req, res) => {
             `
             <div style="font-family:Segoe UI,sans-serif;max-width:500px;margin:auto;">
                 <h2 style="color:#1e3c72;">Email Changed</h2>
-                <p>Your Community Portal login email was changed to <strong>${newEmail}</strong>.</p>
+                <p>Your Community Portal login email was changed to <strong>${escapeEmailHtml(newEmail)}</strong>.</p>
                 <p><strong>Time:</strong> ${timeStr}</p>
                 <hr style="border:none;border-top:1px solid #e2e8f0;">
                 <p style="font-size:13px;color:#64748b;">
@@ -1875,25 +2115,21 @@ app.post("/change-password", requireAuth, async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
-            "SELECT email, password FROM Users WHERE id = $1",
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: "User not found" });
+        const check = await verifyCurrentPassword(req.user.id, currentPassword);
+        if (!check.ok) {
+            return res.status(check.status).json(check.body);
         }
+        const user = check.user;
 
-        const user = result.rows[0];
-        const match = await bcrypt.compare(currentPassword, user.password);
-        if (!match) {
-            return res.status(401).json({ message: "Current password is incorrect" });
-        }
-
+        // Bumping token_version signs out every other device; this one
+        // gets a fresh token below so it stays signed in.
         const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-        await pool.query(
-            "UPDATE Users SET password = $1, must_change_password = false WHERE id = $2",
-            [hash, id]
+        const updated = await pool.query(
+            `UPDATE Users
+             SET password = $1, must_change_password = false, token_version = token_version + 1
+             WHERE id = $2
+             RETURNING id, role, token_version`,
+            [hash, req.user.id]
         );
 
         await sendSecurityEmail(
@@ -1912,7 +2148,7 @@ app.post("/change-password", requireAuth, async (req, res) => {
             `
         );
 
-        res.json({ message: "Password changed successfully" });
+        res.json({ message: "Password changed successfully", token: generateToken(updated.rows[0]) });
 
     } catch (err) {
         console.log(err);

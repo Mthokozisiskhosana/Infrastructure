@@ -51,6 +51,12 @@ ALTER TABLE Users ADD COLUMN IF NOT EXISTS pending_email_token_expiry TIMESTAMP;
 ALTER TABLE Users ADD COLUMN IF NOT EXISTS popia_consent_at      TIMESTAMP;
 ALTER TABLE Users ADD COLUMN IF NOT EXISTS popia_consent_version VARCHAR(20);
 
+-- Session control: bumping token_version (password change/reset,
+-- deactivation) signs the user out everywhere; is_active = false blocks
+-- sign-in for staff who have left. server.js also adds these on startup.
+ALTER TABLE Users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE Users ADD COLUMN IF NOT EXISTS is_active     BOOLEAN NOT NULL DEFAULT true;
+
 -- ============================================
 -- REPORTS
 -- ============================================
