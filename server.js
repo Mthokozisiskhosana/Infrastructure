@@ -1154,7 +1154,7 @@ async function sendStaffCredentialsEmail({ to, firstName, tempPassword, subject,
                     <p>${intro}</p>
                     <p><strong>Login email:</strong> ${escapeEmailHtml(to)}<br>
                     <strong>Temporary password:</strong> <code style="font-size:16px;">${escapeEmailHtml(tempPassword)}</code></p>
-                    <p>Sign in at <a href="${process.env.APP_URL || 'http://localhost:3000'}/municipal-login.html">${process.env.APP_URL || 'http://localhost:3000'}/municipal-login.html</a>.
+                    <p>Sign in at <a href="${process.env.APP_URL || 'https://ciris-wr6c.onrender.com'}/municipal-login.html">${process.env.APP_URL || 'https://ciris-wr6c.onrender.com'}/municipal-login.html</a>.
                     You'll be asked to choose your own password straight away.</p>
                     <hr style="border:none;border-top:1px solid #e2e8f0;">
                     <p style="font-size:13px;color:#64748b;">If you weren't expecting this, contact your supervisor.</p>
