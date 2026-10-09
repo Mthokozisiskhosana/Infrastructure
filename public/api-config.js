@@ -14,6 +14,14 @@ const API_BASE = (location.protocol === 'file:' ||
     ? `http://localhost:${API_SERVER_PORT}`
     : '';
 
+// Coming back with the browser's Back button can show a saved snapshot of
+// the page as it was left (the "back/forward cache"), skipping the login
+// check and showing stale data. When that happens, reload instead, so the
+// page checks the session again and fetches fresh data.
+window.addEventListener('pageshow', event => {
+    if (event.persisted) location.reload();
+});
+
 // Reads a fetch Response as JSON without crashing on an empty or HTML
 // body (e.g. when the request reached the wrong server).
 async function readJsonSafely(res) {

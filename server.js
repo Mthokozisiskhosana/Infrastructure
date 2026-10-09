@@ -80,7 +80,14 @@ app.use(express.json({ limit: '10mb' }));
 // Serve only the frontend files (put your .html/.css/.js in a "public" folder)
 // instead of the whole project root — keeps server.js, package.json, node_modules
 // etc. from being served as static files.
-app.use(express.static(path.join(__dirname, "public")));
+// Pages are never reused from the browser cache, so Back always loads
+// them fresh (re-running the login check) instead of showing what was
+// on screen before. CSS/JS/images can still be cached.
+app.use(express.static(path.join(__dirname, "public"), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) res.set("Cache-Control", "no-store");
+    }
+}));
 
 // Uploaded report photos / profile pictures. Filenames are random UUIDs
 // that never change, so browsers can cache them for a long time.
