@@ -114,36 +114,34 @@ app.get("/api/health", (req, res) => {
 });
 
 // ======================================
-// AI SERVICE
-// The classifier / duplicate detector runs as a separate service
-// (ciris-ai-service). On Render's free plan it sleeps when idle, so the
-// first request after a while can fail with 502/503/504 while it wakes
-// up — callAI() retries until it's ready.
+// AI SERVICE (ciris-ai-service on Render)
+// Trailing slashes are stripped so calls never become "//classify".
 // ======================================
 const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://localhost:8000").replace(/\/+$/, "");
 
-// Calls the AI service, retrying while a sleeping Render instance wakes up.
+// Calls the AI service, retrying while a sleeping Render free instance wakes
+// up (it answers 502/503/504 or times out until the models have loaded).
 // buildForm is a function so each attempt gets a fresh FormData body.
-async function callAI(path, buildForm, attempts = 4) {
+async function callAI(urlPath, buildForm, attempts = 4) {
     for (let i = 1; i <= attempts; i++) {
         try {
-            const res = await fetch(`${AI_SERVICE_URL}${path}`, {
+            const res = await fetch(`${AI_SERVICE_URL}${urlPath}`, {
                 method: "POST",
                 body: buildForm(),
                 signal: AbortSignal.timeout(60000)
             });
             if (![502, 503, 504].includes(res.status) || i === attempts) return res;
-            console.log(`[ai] ${path} returned ${res.status}, retrying (${i}/${attempts})`);
+            console.log(`[ai] ${urlPath} returned ${res.status}, retrying (${i}/${attempts})`);
         } catch (err) {
             if (i === attempts) throw err;
-            console.log(`[ai] ${path} failed (${err.message}), retrying (${i}/${attempts})`);
+            console.log(`[ai] ${urlPath} failed (${err.message}), retrying (${i}/${attempts})`);
         }
         await new Promise(r => setTimeout(r, 5000));
     }
 }
 
-// Wakes the AI service while the user is still filling in the report form,
-// so it's ready by the time they press Submit.
+// Wakes the AI service early — the report page calls this when it opens,
+// so the models are loaded by the time the user presses Submit.
 app.get("/api/wake-ai", (req, res) => {
     fetch(`${AI_SERVICE_URL}/`).catch(() => {});
     res.json({ ok: true });
@@ -900,10 +898,10 @@ app.post("/submit-report", requireAuth, limitReports, async (req, res) => {
                 }
 
                 const dupRes = await callAI("/check-duplicate", () => {
-                    const f = new FormData();
-                    f.append('image1', new Blob([parsedImage.buffer]), 'new.jpg');
-                    f.append('image2', new Blob([candidateBuffer]), 'existing.jpg');
-                    return f;
+                    const formData = new FormData();
+                    formData.append('image1', new Blob([parsedImage.buffer]), 'new.jpg');
+                    formData.append('image2', new Blob([candidateBuffer]), 'existing.jpg');
+                    return formData;
                 });
 
                 if (dupRes.ok) {
@@ -932,9 +930,9 @@ app.post("/submit-report", requireAuth, limitReports, async (req, res) => {
     if (parsedImage) {
         try {
             const aiRes = await callAI("/classify", () => {
-                const f = new FormData();
-                f.append('image', new Blob([parsedImage.buffer]), 'report.jpg');
-                return f;
+                const formData = new FormData();
+                formData.append('image', new Blob([parsedImage.buffer]), 'report.jpg');
+                return formData;
             });
 
             if (aiRes.ok) {
