@@ -499,4 +499,9 @@ window.addEventListener('load', function(){
     if(document.getElementById('profileInfo')){
         loadProfile();
     }
+  // On the report form, start waking the AI service while the user
+    // takes a photo and types a description.
+    if(document.getElementById('description')){
+        fetch(`${API_BASE}/api/wake-ai`).catch(() => {});
+    }
 });
