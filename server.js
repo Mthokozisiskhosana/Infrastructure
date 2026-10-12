@@ -113,6 +113,42 @@ app.get("/api/health", (req, res) => {
     res.json({ message: "Server is running!" });
 });
 
+// ======================================
+// AI SERVICE
+// The classifier / duplicate detector runs as a separate service
+// (ciris-ai-service). On Render's free plan it sleeps when idle, so the
+// first request after a while can fail with 502/503/504 while it wakes
+// up — callAI() retries until it's ready.
+// ======================================
+const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://localhost:8000").replace(/\/+$/, "");
+
+// Calls the AI service, retrying while a sleeping Render instance wakes up.
+// buildForm is a function so each attempt gets a fresh FormData body.
+async function callAI(path, buildForm, attempts = 4) {
+    for (let i = 1; i <= attempts; i++) {
+        try {
+            const res = await fetch(`${AI_SERVICE_URL}${path}`, {
+                method: "POST",
+                body: buildForm(),
+                signal: AbortSignal.timeout(60000)
+            });
+            if (![502, 503, 504].includes(res.status) || i === attempts) return res;
+            console.log(`[ai] ${path} returned ${res.status}, retrying (${i}/${attempts})`);
+        } catch (err) {
+            if (i === attempts) throw err;
+            console.log(`[ai] ${path} failed (${err.message}), retrying (${i}/${attempts})`);
+        }
+        await new Promise(r => setTimeout(r, 5000));
+    }
+}
+
+// Wakes the AI service while the user is still filling in the report form,
+// so it's ready by the time they press Submit.
+app.get("/api/wake-ai", (req, res) => {
+    fetch(`${AI_SERVICE_URL}/`).catch(() => {});
+    res.json({ ok: true });
+});
+
 const SALT_ROUNDS = 12;
 const RESET_CODE_TTL_MINUTES = 10;
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -863,13 +899,11 @@ app.post("/submit-report", requireAuth, limitReports, async (req, res) => {
                     continue;
                 }
 
-                const formData = new FormData();
-                formData.append('image1', new Blob([parsedImage.buffer]), 'new.jpg');
-                formData.append('image2', new Blob([candidateBuffer]), 'existing.jpg');
-
-                const dupRes = await fetch(`${process.env.AI_SERVICE_URL || 'http://localhost:8000'}/check-duplicate`, {
-                    method: 'POST',
-                    body: formData
+                const dupRes = await callAI("/check-duplicate", () => {
+                    const f = new FormData();
+                    f.append('image1', new Blob([parsedImage.buffer]), 'new.jpg');
+                    f.append('image2', new Blob([candidateBuffer]), 'existing.jpg');
+                    return f;
                 });
 
                 if (dupRes.ok) {
@@ -897,12 +931,10 @@ app.post("/submit-report", requireAuth, limitReports, async (req, res) => {
 
     if (parsedImage) {
         try {
-            const formData = new FormData();
-            formData.append('image', new Blob([parsedImage.buffer]), 'report.jpg');
-
-            const aiRes = await fetch(`${process.env.AI_SERVICE_URL || 'http://localhost:8000'}/classify`, {
-                method: 'POST',
-                body: formData
+            const aiRes = await callAI("/classify", () => {
+                const f = new FormData();
+                f.append('image', new Blob([parsedImage.buffer]), 'report.jpg');
+                return f;
             });
 
             if (aiRes.ok) {
@@ -2178,4 +2210,6 @@ app.get(/^(?!\/(register|login|forgot-password|verify-code|reset-password|submit
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    // Start waking the AI service as soon as the backend is up.
+    fetch(`${AI_SERVICE_URL}/`).catch(() => {});
 });
