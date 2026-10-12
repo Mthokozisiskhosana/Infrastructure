@@ -282,7 +282,26 @@ function clearForm(){
     console.log("Form cleared successfully");
 }
 
+let submitting = false; // stops a second tap sending the same report twice
+
+// Shows "Submitting..." on the submit button while the report is being sent.
+function setSubmitting(isSubmitting){
+    submitting = isSubmitting;
+    const btn = document.querySelector('[onclick*="submitReport"]');
+    if(!btn) return;
+    if(isSubmitting){
+        btn.dataset.originalText = btn.innerHTML;
+        btn.innerHTML = "⏳ Submitting... this can take up to a minute";
+        btn.disabled = true;
+    } else {
+        if(btn.dataset.originalText) btn.innerHTML = btn.dataset.originalText;
+        btn.disabled = false;
+    }
+}
+
 function submitReport(){
+    if(submitting) return;
+
     const desc = document.getElementById("description").value;
 
     if(!desc){
@@ -309,14 +328,24 @@ function submitReport(){
         location:    gpsData
     };
 
-    // Send to server 
+    setSubmitting(true);
+
+    // Send to server
     fetch(`${API_BASE}/submit-report`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify(report)
     })
-    .then(res => res.json().then(data => ({ status: res.status, data })))
+    // Some errors (e.g. Render timeouts) come back as HTML, not JSON —
+    // don't let that turn into a misleading "Could not connect" message.
+    .then(res => res.json()
+        .catch(() => ({ message: `The server returned an unexpected response (status ${res.status}). Please try again.` }))
+        .then(data => ({ status: res.status, data })))
     .then(({ status, data }) => {
+        if (status === 401) {
+            handleUnauthorized();
+            return;
+        }
         if (status === 409) {
             alert(data.message || "This report has been submitted before.");
             return;
@@ -327,7 +356,9 @@ function submitReport(){
             const msg = document.getElementById("successMessage");
             if(msg){
                 msg.style.display = "block";
-                setTimeout(() => { msg.style.display = "none"; }, 3000);
+                setTimeout(() => { msg.style.display = "none"; }, 5000);
+            } else {
+                alert("Report submitted successfully");
             }
 
             loadReports(); // refresh the list
@@ -338,7 +369,8 @@ function submitReport(){
     .catch(err => {
         console.error(err);
         alert("Could not connect to server.");
-    });
+    })
+    .finally(() => setSubmitting(false));
 }
 
 /* REPORT PHOTOS */
