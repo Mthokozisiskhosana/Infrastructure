@@ -122,13 +122,13 @@ const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || "http://localhost:8000").r
 // Calls the AI service, retrying while a sleeping Render free instance wakes
 // up (it answers 502/503/504 or times out until the models have loaded).
 // buildForm is a function so each attempt gets a fresh FormData body.
-async function callAI(urlPath, buildForm, attempts = 4) {
+async function callAI(urlPath, buildForm, attempts = 3) {
     for (let i = 1; i <= attempts; i++) {
         try {
             const res = await fetch(`${AI_SERVICE_URL}${urlPath}`, {
                 method: "POST",
                 body: buildForm(),
-                signal: AbortSignal.timeout(60000)
+                signal: AbortSignal.timeout(45000)
             });
             if (![502, 503, 504].includes(res.status) || i === attempts) return res;
             console.log(`[ai] ${urlPath} returned ${res.status}, retrying (${i}/${attempts})`);
